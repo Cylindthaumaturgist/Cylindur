@@ -1,15 +1,41 @@
+const ColorSchemes = {
+  "dark+": {
+    IDENTIFIERS: '\x1b[38;2;156;220;254m',
+    KEYWORDS: '\x1b[38;2;86;156;214m',
+    STRINGS: '\x1b[38;2;206;145;120m',
+    NUMBERS: '\x1b[38;2;220;220;170m',
+    FUNC_NAME: '\x1b[38;2;220;220;170m',
+    COMMENTS: '\x1b[38;2;106;153;85m',
+    OPERATORS: '\x1b[38;2;212;212;212m',
+    CLASSES: '\x1b[38;2;78;201;176m',
+  },
+  "dracula": {
+    IDENTIFIERS: '\x1b[38;2;189;147;249m',
+    KEYWORDS: '\x1b[38;2;255;121;198m',
+    STRINGS: '\x1b[38;2;80;250;123m',
+    NUMBERS: '\x1b[38;2;241;250;140m',
+    FUNC_NAME: '\x1b[38;2;139;233;253m',
+    COMMENTS: '\x1b[38;2;98;114;164m',
+    OPERATORS: '\x1b[38;2;248;248;242m',
+    CLASSES: '\x1b[38;2;255;85;255m',
+  },
+};
+
 export default class CaretError extends Error {
-  constructor(type, file, message, line, column, sourceLines) {
+  constructor(type, file, message, line, column, sourceLines, colorScheme = "dark+") {
+		const Scheme = ColorSchemes[colorScheme];
+		
+		const IDENTIFIERS = Scheme.IDENTIFIERS;
+    const KEYWORDS = Scheme.KEYWORDS;
+    const STRINGS = Scheme.STRINGS;
+    const NUMBERS = Scheme.NUMBERS;
+    const FUNC_NAME = Scheme.FUNC_NAME;
+    const COMMENTS = Scheme.COMMENTS;
+    const OPERATORS = Scheme.OPERATORS;
+    const CLASSES = Scheme.CLASSES;
+		
     const RESET = '\x1b[0m';
     const RED = '\x1b[38;2;244;71;71m';
-    const IDENTIFIERS = '\x1b[38;2;156;220;254m';
-    const KEYWORDS = '\x1b[38;2;86;156;214m';
-    const STRINGS = '\x1b[38;2;206;145;120m';
-    const NUMBERS = '\x1b[38;2;220;220;170m';
-    const FUNC_NAME = '\x1b[38;2;220;220;170m';
-    const COMMENTS = '\x1b[38;2;106;153;85m';
-    const OPERATORS = '\x1b[38;2;212;212;212m';
-    const CLASSES = '\x1b[38;2;78;201;176m';
     const BOLD = '\x1b[1m';
     const GRAY = '\x1b[37m';
     const H_START = '\u0000';

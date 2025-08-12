@@ -9,7 +9,7 @@ function ParserError(file, message, line, column, sourceLines) {
       message,
       line,
       column,
-      sourceLines
+      sourceLines,
     ).toString()
   );
   process.exit(1);
@@ -593,11 +593,32 @@ export function Parser(tokens, code, filename = "unknown.cy") {
     consume();
 
     if (tokens[current]?.value !== "(") {
-      throw new Error(`Expected '(' before if condition at ${line}:${column}`);
+			const errorLine = line;
+      const errorColumn = column;
+      
+      ParserError(
+				filename,
+        `Expected '(' before if condition`,
+				errorLine,
+				errorColumn + 1,
+				code.split(/\r?\n/),
+      );
     }
     consume();
 
     const test = parseExpression();
+		if (!test) {
+			const errorLine = line;
+      const errorColumn = column;
+      
+      ParserError(
+				filename,
+        `Expected a condition inside if condition`,
+				errorLine,
+				errorColumn,
+				code.split(/\r?\n/),
+      );
+		}
 
     if (tokens[current]?.value !== ")") {
       throw new Error(`Expected ')' after if condition at ${line}:${column}`);
@@ -680,7 +701,16 @@ export function Parser(tokens, code, filename = "unknown.cy") {
     consume();
 
     if (tokens[current]?.value !== "(") {
-      throw new Error(`Expected '(' after 'for' at ${line}:${column}`);
+      const errorLine = line;
+      const errorColumn = column;
+      
+      ParserError(
+				filename,
+        `Expected a condition inside if condition body`,
+				errorLine,
+				errorColumn,
+				code.split(/\r?\n/),
+      );
     }
     consume();
 
@@ -757,12 +787,23 @@ export function Parser(tokens, code, filename = "unknown.cy") {
   function parseWhileLoop() {
     const startToken = tokens[current];
     consume();
+		let parenthesis = 0;
 
     if (tokens[current]?.value !== "(") {
-      throw new Error(`Expected '(' after 'while' at ${line}:${column}`);
+			const errorLine = line;
+      const errorColumn = column + 4;
+			parenthesis = column;
+      
+      ParserError(
+				filename,
+        `Expected '(' after 'while'`,
+				errorLine,
+				errorColumn,
+				code.split(/\r?\n/),
+      );
     }
+		
     consume();
-
     const test = parseExpression();
 		if (!test) {
 			const errorLine = line;
@@ -772,7 +813,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
 				filename,
         `Expected a condition inside while condition`,
 				errorLine,
-				errorColumn - 4,
+				errorColumn ,
 				code.split(/\r?\n/),
       );
 		}
@@ -780,7 +821,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
     if (tokens[current]?.value !== ")") {
 			const errorLine = test?.loc?.end?.line ?? line;
       const errorColumn = test?.loc?.end?.column ?? column;
-      let additives = 0;
+      let additives = 1;
 			
 			if (test?.type === 'BoolLiteral') {
 				additives = test.value.toString().length - 1;
@@ -798,7 +839,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
     if (tokens[current]?.value !== "{") {
 			const errorLine = test?.loc?.end?.line ?? line;
       const errorColumn = test?.loc?.end?.column ?? column;
-      let additives = 0;
+      let additives = 2;
 			
 			if (test?.type === 'BoolLiteral') {
 				additives = test.value.toString().length;
@@ -815,8 +856,23 @@ export function Parser(tokens, code, filename = "unknown.cy") {
 
     const body = [];
     while (tokens[current]?.value !== "}") {
-      body.push(parseStatement());
-    }
+  if (current >= tokens.length) break; // stop if reached end of tokens
+  body.push(parseStatement());
+}
+		
+		if (tokens[current]?.value !== "}") {
+			const errorLine = line;
+      const errorColumn = column;
+			let additives = 0;
+			
+      ParserError(
+				filename,
+        `Expected a '}' after while body`,
+				errorLine,
+				errorColumn,
+				code.split(/\r?\n/),
+      );
+		}
 		
     const endToken = tokens[current];
     consume();
@@ -1019,7 +1075,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
         },
       };
     }
-    
+		
     if (tokens[current]?.value === ";") {
       const endToken = tokens[current];
       consume();
@@ -1032,7 +1088,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
         },
       };
     } else {
-      const errorLine = expr?.loc?.end?.line ?? line;
+			const errorLine = expr?.loc?.end?.line ?? line;
       let errorColumn = expr?.loc?.end?.column ?? column;
       let additive = 0;
 			let addLine = 0;
@@ -1050,7 +1106,6 @@ export function Parser(tokens, code, filename = "unknown.cy") {
 			} else if (expr?.type === "CallExpression") {
 				additive = 0;
 			}
-			console.log("expr: ", expr)
       ParserError(
         filename,
         `Expected ';' after expression${
@@ -1091,7 +1146,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
           filename,
           `Expected library name after '<' in built-in include`,
           tokens[current]?.line || line,
-          (tokens[current]?.column || column) + 1,
+          (tokens[current]?.column || column) - 1,
           code.split(/\r?\n/)
         );
       }
@@ -1104,7 +1159,7 @@ export function Parser(tokens, code, filename = "unknown.cy") {
           filename,
           `Expected '>' after library name`,
           tokens[current]?.line || line,
-          (tokens[current]?.column || column) + (library?.length ?? 0),
+          (tokens[current]?.column || column) + (library?.length ?? 1),
           code.split(/\r?\n/)
         );
       }
