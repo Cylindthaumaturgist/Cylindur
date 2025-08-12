@@ -14,7 +14,14 @@ export const TokenTypes = {
 
 function LexerError(file, message, line, column, sourceLines) {
   console.log(
-    new CaretError("TokenError", file, message, line, column, sourceLines).toString()
+    new CaretError(
+      'TokenError',
+      file,
+      message,
+      line,
+      column,
+      sourceLines
+    ).toString()
   );
   process.exit(1);
 }
@@ -61,7 +68,7 @@ export function Lexer(code, filename = 'unknown.cy') {
     '|',
     '#',
   ];
-  
+
   function nextChar(a = 0) {
     return code[position + a];
   }
@@ -218,10 +225,10 @@ export function Lexer(code, filename = 'unknown.cy') {
           advance(1);
         } else if (nextChar(1) === '*') {
           let commentValue = '';
-          advance(2); // Skip '/*'
+          advance(2);
           while (position < code.length) {
             if (nextChar() === '*' && nextChar(1) === '/') {
-              advance(2); // Skip '*/'
+              advance(2);
               break;
             }
             commentValue += nextChar();
@@ -308,7 +315,7 @@ export function Lexer(code, filename = 'unknown.cy') {
     } else if (char === '"' || char === "'") {
       const quoteType = char;
       let stringValue = '';
-      advance(); // skip the opening quote
+      advance();
 
       while (
         position < code.length &&
@@ -319,12 +326,11 @@ export function Lexer(code, filename = 'unknown.cy') {
         advance();
       }
 
-      // Check if string was closed
       if (nextChar() !== quoteType) {
         throw new SyntaxError(`Unterminated string literal`);
       }
 
-      advance(); // skip closing quote
+      advance();
 
       tokens.push({
         type: TokenTypes.String,
@@ -333,7 +339,13 @@ export function Lexer(code, filename = 'unknown.cy') {
         column: tokenColumn,
       });
     } else {
-      LexerError(filename, `Unexpected token '${char}'`, tokenLine, tokenColumn-1, code.split(/\r?\n/));
+      LexerError(
+        filename,
+        `Unexpected token '${char}'`,
+        tokenLine,
+        tokenColumn - 1,
+        code.split(/\r?\n/)
+      );
     }
   }
   return tokens;

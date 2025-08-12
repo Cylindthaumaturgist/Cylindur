@@ -1,5 +1,5 @@
 const ColorSchemes = {
-  "dark+": {
+  'dark+': {
     IDENTIFIERS: '\x1b[38;2;156;220;254m',
     KEYWORDS: '\x1b[38;2;86;156;214m',
     STRINGS: '\x1b[38;2;206;145;120m',
@@ -9,7 +9,7 @@ const ColorSchemes = {
     OPERATORS: '\x1b[38;2;212;212;212m',
     CLASSES: '\x1b[38;2;78;201;176m',
   },
-  "dracula": {
+  dracula: {
     IDENTIFIERS: '\x1b[38;2;189;147;249m',
     KEYWORDS: '\x1b[38;2;255;121;198m',
     STRINGS: '\x1b[38;2;80;250;123m',
@@ -19,13 +19,54 @@ const ColorSchemes = {
     OPERATORS: '\x1b[38;2;248;248;242m',
     CLASSES: '\x1b[38;2;255;85;255m',
   },
+  one_dark: {
+    IDENTIFIERS: '\x1b[38;2;220;220;220m',
+    KEYWORDS: '\x1b[38;2;198;120;221m',
+    STRINGS: '\x1b[38;2;152;195;121m',
+    NUMBERS: '\x1b[38;2;209;154;102m',
+    FUNC_NAME: '\x1b[38;2;97;175;239m',
+    COMMENTS: '\x1b[38;2;92;99;112m',
+    OPERATORS: '\x1b[38;2;248;248;242m',
+    CLASSES: '\x1b[38;2;224;108;117m',
+  },
 };
 
 export default class CaretError extends Error {
-  constructor(type, file, message, line, column, sourceLines, colorScheme = "dark+") {
-		const Scheme = ColorSchemes[colorScheme];
-		
-		const IDENTIFIERS = Scheme.IDENTIFIERS;
+  constructor(
+    type,
+    file,
+    message,
+    line,
+    column,
+    sourceLines,
+    colorScheme = 'dark+'
+  ) {
+    const Scheme = ColorSchemes[colorScheme];
+    const RED = '\x1b[38;2;244;71;71m';
+
+    if (!Scheme) {
+      const YELLOW = '\x1b[33m';
+      const RESET = '\x1b[0m';
+
+      let colorSchemeLists = [];
+      for (const key in ColorSchemes) {
+        colorSchemeLists.push(`${YELLOW}${key}${RESET}`);
+      }
+
+      const last = colorSchemeLists.length - 1;
+      const listString = colorSchemeLists
+        .map((item, i) => (i === last ? item : item + ', '))
+        .join('');
+
+      console.log(
+        new Error(
+          `${RED}ERROR${RESET}: Unknown Color Scheme: \x1b[38;2;206;145;120m'${colorScheme}'${RESET}.\nOnly these exist: ${listString}`
+        ).message
+      );
+      process.exit(1);
+    }
+
+    const IDENTIFIERS = Scheme.IDENTIFIERS;
     const KEYWORDS = Scheme.KEYWORDS;
     const STRINGS = Scheme.STRINGS;
     const NUMBERS = Scheme.NUMBERS;
@@ -33,9 +74,8 @@ export default class CaretError extends Error {
     const COMMENTS = Scheme.COMMENTS;
     const OPERATORS = Scheme.OPERATORS;
     const CLASSES = Scheme.CLASSES;
-		
+
     const RESET = '\x1b[0m';
-    const RED = '\x1b[38;2;244;71;71m';
     const BOLD = '\x1b[1m';
     const GRAY = '\x1b[37m';
     const H_START = '\u0000';
@@ -92,7 +132,7 @@ export default class CaretError extends Error {
           if (j > 0 && tokens[j - 1].text === '.') {
             let m = j + 1;
             while (m < tokens.length && tokens[m].type === 'space') m++;
-						
+
             if (m < tokens.length && tokens[m].text === '(') {
               tok.type = 'func';
             } else if (/^[A-Z]/.test(tok.text)) {
@@ -107,10 +147,10 @@ export default class CaretError extends Error {
           while (k < tokens.length && tokens[k].type === 'space') k++;
           if (k < tokens.length && tokens[k].text === '.') {
             if (/^[A-Z]/.test(tok.text)) {
-            tok.type = 'class';
-          } else {
-						tok.type = 'ident';
-					}
+              tok.type = 'class';
+            } else {
+              tok.type = 'ident';
+            }
             continue;
           }
 
@@ -127,7 +167,7 @@ export default class CaretError extends Error {
               tok.type = 'ident';
             }
           }
-					if (/^[A-Z]/.test(tok.text)) {
+          if (/^[A-Z]/.test(tok.text)) {
             tok.type = 'class';
           }
         }
@@ -233,6 +273,7 @@ export default class CaretError extends Error {
     this.name = type;
     this.message = errorMsg;
     this.stack = '';
+
     this.toString = () => this.message;
   }
 }

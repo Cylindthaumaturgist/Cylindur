@@ -1,6 +1,6 @@
 function TypeCheck(ast, builtInFunctions = {}) {
   const variables = new Map();
-  // functions map holds both user-defined and built-in functions
+
   const functions = new Map(Object.entries(builtInFunctions));
   const errors = [];
   let currentFunction = null;
@@ -57,11 +57,10 @@ function TypeCheck(ast, builtInFunctions = {}) {
             node.operator
           )
         ) {
-          // Comparison operators always return Boolean
           return 'Boolean';
         }
         if (leftType === rightType) return leftType;
-				if (leftType === 'Any') return leftType;
+        if (leftType === 'Any') return leftType;
         error(
           `Type mismatch in binary expression: ${leftType} ${node.operator} ${rightType}`
         );
@@ -282,9 +281,9 @@ function Compiler(ast) {
 
   ast.body.forEach((node) => {
     if (node.type === 'VariableDeclaration') {
-      node.declarations.forEach((decl) => declareVar(decl.id.name)); // .value → .name
+      node.declarations.forEach((decl) => declareVar(decl.id.name));
     } else if (node.type === 'FunctionDeclaration') {
-      declareVar(node.id.value); // .value → .name
+      declareVar(node.id.value);
     }
   });
 
@@ -463,77 +462,74 @@ function Compiler(ast) {
         break;
       }
       case 'ExpressionStatement': {
-  const expr = node.expression;
+        const expr = node.expression;
 
-  if (expr.type === 'UnaryExpression') {
-		if (!constants.includes(1)) constants.push(1); 
-    if (expr.operator === '++') {
-			
-      compileExpression(expr.argument);
-      writeUint8(bytes, opMap.LOAD_CONST);
-      writeUint32(bytes, constants.indexOf(1));
-      writeUint8(bytes, opMap.ADD);
+        if (expr.type === 'UnaryExpression') {
+          if (!constants.includes(1)) constants.push(1);
+          if (expr.operator === '++') {
+            compileExpression(expr.argument);
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(1));
+            writeUint8(bytes, opMap.ADD);
 
-      if (expr.argument.type === 'Identifier') {
-        const idx = getVarIndex(expr.argument.value);
-        writeUint8(bytes, opMap.STORE_VAR);
-        writeUint32(bytes, idx);
-      } else {
-        throw new Error('Unsupported argument type for postfix increment');
+            if (expr.argument.type === 'Identifier') {
+              const idx = getVarIndex(expr.argument.value);
+              writeUint8(bytes, opMap.STORE_VAR);
+              writeUint32(bytes, idx);
+            } else {
+              throw new Error(
+                'Unsupported argument type for postfix increment'
+              );
+            }
+
+            compileExpression(expr.argument);
+          } else if (expr.operator === '--') {
+            compileExpression(expr.argument);
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(1));
+            writeUint8(bytes, opMap.SUB);
+
+            if (expr.argument.type === 'Identifier') {
+              const idx = getVarIndex(expr.argument.value);
+              writeUint8(bytes, opMap.STORE_VAR);
+              writeUint32(bytes, idx);
+            } else {
+              throw new Error(
+                'Unsupported argument type for postfix decrement'
+              );
+            }
+
+            compileExpression(expr.argument);
+          } else {
+            throw new Error(`Unsupported update operator: ${expr.operator}`);
+          }
+          break;
+        }
+
+        if (
+          expr.type === 'CallExpression' &&
+          expr.callee.type === 'MemberExpression' &&
+          expr.callee.object.value === 'System' &&
+          expr.callee.property.value === 'Log' &&
+          includedBuiltIn.has('SystemLogging')
+        ) {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          writeUint8(bytes, opMap.PRINT);
+          writeUint32(bytes, expr.arguments.length);
+        } else if (!includedBuiltIn.has('SystemLogging')) {
+          throw new Error(
+            "To use System.Log(); You must include built in library: 'SystemLogging'"
+          );
+        }
+
+        break;
       }
-
-      // For postfix, return old value (optional)
-      compileExpression(expr.argument);
-
-    } else if (expr.operator === '--') {
-      compileExpression(expr.argument);
-      writeUint8(bytes, opMap.LOAD_CONST);
-      writeUint32(bytes, constants.indexOf(1));
-      writeUint8(bytes, opMap.SUB);
-
-      if (expr.argument.type === 'Identifier') {
-        const idx = getVarIndex(expr.argument.value);
-        writeUint8(bytes, opMap.STORE_VAR);
-        writeUint32(bytes, idx);
-      } else {
-        throw new Error('Unsupported argument type for postfix decrement');
-      }
-
-      // For postfix, return old value (optional)
-      compileExpression(expr.argument);
-
-    } else {
-      throw new Error(`Unsupported update operator: ${expr.operator}`);
-    }
-    break; // important to avoid falling through
-  }
-
-  // rest of your ExpressionStatement handling here
-
-  if (
-    expr.type === 'CallExpression' &&
-    expr.callee.type === 'MemberExpression' &&
-    expr.callee.object.value === 'System' &&
-    expr.callee.property.value === 'Log' &&
-    includedBuiltIn.has('SystemLogging')
-  ) {
-    expr.arguments.forEach((arg) => compileExpression(arg));
-    writeUint8(bytes, opMap.PRINT);
-    writeUint32(bytes, expr.arguments.length);
-  } else if (!includedBuiltIn.has('SystemLogging')) {
-    throw new Error(
-      "To use System.Log(); You must include built in library: 'SystemLogging'"
-    );
-  }
-
-  break;
-}
       case 'IfStatement': {
         compileExpression(node.test);
 
         const jmpIfFalsePos = bytes.length;
         writeUint8(bytes, opMap.JMP_IF_FALSE);
-        writeUint32(bytes, 0); // placeholder
+        writeUint32(bytes, 0);
 
         if (node.consequent.type === 'BlockStatement') {
           node.consequent.body.forEach(compileNode);
@@ -543,9 +539,8 @@ function Compiler(ast) {
 
         const jmpPos = bytes.length;
         writeUint8(bytes, opMap.JMP);
-        writeUint32(bytes, 0); // placeholder
+        writeUint32(bytes, 0);
 
-        // Patch JMP_IF_FALSE to jump here
         const offset1 = bytes.length;
         bytes[jmpIfFalsePos + 1] = (offset1 >> 24) & 0xff;
         bytes[jmpIfFalsePos + 2] = (offset1 >> 16) & 0xff;
@@ -560,7 +555,6 @@ function Compiler(ast) {
           }
         }
 
-        // Patch JMP to jump here
         const offset2 = bytes.length;
         bytes[jmpPos + 1] = (offset2 >> 24) & 0xff;
         bytes[jmpPos + 2] = (offset2 >> 16) & 0xff;
@@ -604,10 +598,8 @@ function Compiler(ast) {
 
   writeUint8(bytes, opMap.HALT);
 
-  // Compose final buffer
   const header = [0xbe, 0xef, 0xc0, 0xde, ver];
 
-  // Write constants section
   const constantsBytes = [opMap.CONST_LEN];
   writeUint32(constantsBytes, constants.length);
   for (const c of constants) {
@@ -627,7 +619,6 @@ function Compiler(ast) {
     }
   }
 
-  // Bytecode length section
   const bytecodesLengthBytes = [opMap.BYTE_LEN];
   writeUint32(bytecodesLengthBytes, bytes.length);
 
