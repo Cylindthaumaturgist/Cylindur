@@ -1,36 +1,38 @@
 export default class CaretError extends Error {
   constructor(type, file, message, line, column, sourceLines) {
-    const RESET = '\x1b[38;2;244;71;71m';
-    const BLUE = '\x1b[94m';
-    const MAGENTA = '\x1b[38;5;171m';
-    const LIGHTBLUE = '\x1b[96m';
-    const GREEN = '\x1b[32m';
-    const YELLOW = '\x1b[33m';
-    const GREY = '\x1b[90m';
-    const RED = '\x1b[31m';
+    const RESET = '\x1b[0m';
+    const RED = '\x1b[38;2;244;71;71m';
+    const IDENTIFIERS = '\x1b[38;2;156;220;254m';
+    const KEYWORDS = '\x1b[38;2;86;156;214m';
+    const STRINGS = '\x1b[38;2;206;145;120m';
+    const NUMBERS = '\x1b[38;2;220;220;170m';
+    const FUNC_NAME = '\x1b[38;2;220;220;170m';
+    const COMMENTS = '\x1b[38;2;106;153;85m';
+    const OPERATORS = '\x1b[38;2;212;212;212m';
+    const CLASSES = '\x1b[38;2;78;201;176m';
     const BOLD = '\x1b[1m';
-    const LIGHTRED = '\x1b[91m';
-		const REDDISH_BROWN = '\x1b[38;2;205;133;63m';
+    const GRAY = '\x1b[37m';
     const H_START = '\u0000';
     const H_END = '\u0001';
     const keywords = new Set([
-    'const',
-    'var',
-    'fun',
-    'while',
-    'if',
-    'else',
-    'cases',
-    'for',
-    'return',
-    'alias',
-    'enum',
-    'typeof',
-    'null',
-    'undefined',
-    'include',
-  ]);
-    const tokenRE = /\/\/.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(\.\d+)?\b|[A-Za-z_][A-Za-z0-9_]*|\s+|./g;
+      'const',
+      'var',
+      'fun',
+      'while',
+      'if',
+      'else',
+      'cases',
+      'for',
+      'return',
+      'alias',
+      'enum',
+      'typeof',
+      'null',
+      'undefined',
+      'include',
+    ]);
+    const tokenRE =
+      /\/\/.*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(\.\d+)?\b|[A-Za-z_][A-Za-z0-9_]*|\s+|./g;
     const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 
     let errorMsg = `${RED}${type}${RESET}: (${BOLD}${file}${RESET}) ${message} (${line}:${column})\n\n`;
@@ -61,14 +63,46 @@ export default class CaretError extends Error {
       for (let j = 0; j < tokens.length; j++) {
         const tok = tokens[j];
         if (tok.type === 'ident') {
-          if (keywords.has(tok.text)) tok.type = 'keyword';
-          else if (/^(true|false|null)$/.test(tok.text)) tok.type = 'literal';
-          else {
-            let k = j + 1;
-            while (k < tokens.length && tokens[k].type === 'space') k++;
-            if (k < tokens.length && tokens[k].text === '(') tok.type = 'func';
-            else if (/^[A-Z]/.test(tok.text)) tok.type = 'Class';
-            else tok.type = 'ident';
+          if (j > 0 && tokens[j - 1].text === '.') {
+            let m = j + 1;
+            while (m < tokens.length && tokens[m].type === 'space') m++;
+						
+            if (m < tokens.length && tokens[m].text === '(') {
+              tok.type = 'func';
+            } else if (/^[A-Z]/.test(tok.text)) {
+              tok.type = 'class';
+            } else {
+              tok.type = 'ident';
+            }
+            continue;
+          }
+
+          let k = j + 1;
+          while (k < tokens.length && tokens[k].type === 'space') k++;
+          if (k < tokens.length && tokens[k].text === '.') {
+            if (/^[A-Z]/.test(tok.text)) {
+            tok.type = 'class';
+          } else {
+						tok.type = 'ident';
+					}
+            continue;
+          }
+
+          if (keywords.has(tok.text)) {
+            tok.type = 'keyword';
+          } else if (/^(true|false|null)$/.test(tok.text)) {
+            tok.type = 'literal';
+          } else {
+            let m = j + 1;
+            while (m < tokens.length && tokens[m].type === 'space') m++;
+            if (m < tokens.length && tokens[m].text === '(') {
+              tok.type = 'func';
+            } else {
+              tok.type = 'ident';
+            }
+          }
+					if (/^[A-Z]/.test(tok.text)) {
+            tok.type = 'class';
           }
         }
       }
@@ -91,21 +125,33 @@ export default class CaretError extends Error {
           if (tokens.length) {
             const last = tokens[tokens.length - 1];
             if (last.type === 'space') last.text = last.text + H_START + H_END;
-            else tokens.push({ text: H_START + H_END, start: rawLine.length, end: rawLine.length, type: 'marker' });
+            else
+              tokens.push({
+                text: H_START + H_END,
+                start: rawLine.length,
+                end: rawLine.length,
+                type: 'marker',
+              });
           } else {
-            tokens.push({ text: H_START + H_END, start: 0, end: 0, type: 'marker' });
+            tokens.push({
+              text: H_START + H_END,
+              start: 0,
+              end: 0,
+              type: 'marker',
+            });
           }
         }
       }
 
       const colorFor = (type) => {
-        if (type === 'keyword') return BLUE;
-        if (type === 'string') return REDDISH_BROWN;
-        if (type === 'func') return CYAN;
-        if (type === 'number') return YELLOW;
-        if (type === 'ident') return MAGENTA;
-        if (type === 'literal') return LIGHTBLUE;
-        if (type === 'comment') return GREY;
+        if (type === 'keyword') return KEYWORDS;
+        if (type === 'string') return STRINGS;
+        if (type === 'func') return FUNC_NAME;
+        if (type === 'number') return NUMBERS;
+        if (type === 'ident') return IDENTIFIERS;
+        if (type === 'literal') return KEYWORDS;
+        if (type === 'comment') return COMMENTS;
+        if (type === 'class') return CLASSES;
         return '';
       };
 
@@ -116,7 +162,9 @@ export default class CaretError extends Error {
           continue;
         }
         if (tok.type === 'comment') {
-          coloredLine += tok.text.startsWith(GREY) ? tok.text : `${GREY}${tok.text}${RESET}`;
+          coloredLine += tok.text.startsWith(GREY)
+            ? tok.text
+            : `${COMMENTS}${tok.text}${RESET}`;
           continue;
         }
         const color = colorFor(tok.type);
@@ -139,19 +187,19 @@ export default class CaretError extends Error {
             break;
           }
           const ch = s.slice(hs + 1, he);
-          out += `${LIGHTRED}${BOLD}${ch}${RESET}`;
+          out += `${RED}${BOLD}${ch}${RESET}`;
           pos = he + 1;
         }
         coloredLine += out;
       }
 
-      const linePrefix = `${prefix}${prefix.length === 0 ? '' : ' '}${GREY}${lineNumber}${RESET} |  `;
+      const linePrefix = `${prefix}${prefix.length === 0 ? '' : ' '}${GRAY}${lineNumber}${RESET} |  `;
       errorMsg += `${linePrefix}${coloredLine}\n`;
 
       if (isErrorLine) {
         const visiblePad = stripAnsi(linePrefix).length;
         const caretPos = visiblePad + (column - 1);
-errorMsg += ' '.repeat(Math.max(0, caretPos)) + `${RED}^${RESET}\n`;
+        errorMsg += ' '.repeat(Math.max(0, caretPos)) + `${RED}^${RESET}\n`;
       }
     }
 
@@ -162,4 +210,3 @@ errorMsg += ' '.repeat(Math.max(0, caretPos)) + `${RED}^${RESET}\n`;
     this.toString = () => this.message;
   }
 }
-
