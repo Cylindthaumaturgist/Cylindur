@@ -10,7 +10,7 @@ function ParserError(file, message, line, column, sourceLines) {
       line,
       column,
       sourceLines,
-      'one_dark'
+      'dark+'
     ).toString()
   );
   process.exit(1);
@@ -96,7 +96,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       consume();
       let expr = parseExpression();
       if (tokens[current]?.value !== ')') {
-        throw new Error(`Expected: ')' at ${line}:${column}`);
+        const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected ')'`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
       }
       const endToken = tokens[current];
       consume();
@@ -271,9 +280,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           keyToken.type !== TokenTypes.Identifier &&
           keyToken.type !== TokenTypes.String
         ) {
-          throw new SyntaxError(
-            `Expected property name (identifier or string) at ${line}:${column}`
-          );
+					const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected property name`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
         }
 
         const key = keyToken.value;
@@ -330,7 +346,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       };
     }
 
-    console.error(`Unexpected token: ${token.value} at ${line}:${column}`);
+    const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Unexpected token: ${token.value}`,
+        errorLine,
+        errorColumn - token.value.length,
+        code.split(/\r?\n/)
+      );
     erred = true;
     consume();
   }
@@ -393,12 +418,37 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     const startToken = tokens[current];
     let kind = tokens[current].value === 'const' ? 'Constant' : 'Changeable';
     consume();
+		
+		if (tokens[current]?.type !== TokenTypes.Identifier) {
+			const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected a variable name`,
+        errorLine,
+        errorColumn + 2,
+        code.split(/\r?\n/)
+      );
+		}
 
     let id = walk();
     let typeAnnotation = null;
 
     if (tokens[current]?.value === ':') {
       consume();
+			if (tokens[current]?.type !== TokenTypes.Identifier) {
+				const errorLine = line;
+        const errorColumn = column;
+  
+        ParserError(
+          filename,
+          `Expected variable type after ':'`,
+          errorLine,
+          errorColumn,
+          code.split(/\r?\n/)
+        );
+			}
       typeAnnotation = {
         type: 'TypeAnnotation',
         annotation: tokens[current].value,
@@ -409,7 +459,20 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       consume();
     } else {
       if (tokens[current]?.value !== '=') {
-        throw new Error(`'=' expected at ${line}:${column}`);
+				const errorLine = line;
+        const errorColumn = column;
+				let additive = 0;
+if (tokens[current - 1]?.type === "identifier") {
+  additive = tokens[current - 1].value.length - 1;
+}
+  
+        ParserError(
+          filename,
+          `Expected '=' after variable name`,
+          errorLine,
+          errorColumn + additive,
+          code.split(/\r?\n/)
+        );
       }
       typeAnnotation = {
         type: 'TypeAnnotation',
@@ -422,16 +485,37 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
 
     consume();
     let init = parseExpression();
-    if (init.type === 'AssignmentExpression') init = init.right;
+		if (!init) {
+			const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected variable value after '='`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
+		}
+    if (init?.type === 'AssignmentExpression') init = init.right;
 
     if (tokens[current]?.value !== ';') {
-      const errorLine = init.loc.end.line;
-      const errorColumn = init.loc.end.column;
+      const errorLine = init?.loc?.end?.line ?? line;
+      const errorColumn = init?.loc?.end?.column ?? column;
+      if (current > (tokens.length - 1)) {
+				current = tokens.length - 1;
+			}
+			let additive = 0;
+if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") {
+  additive = tokens[current].value.length - 1;
+} else if (tokens[current]?.type === "identifier") {
+	additive = tokens[current].value.length + 1;
+}
       ParserError(
         filename,
         `Expected ';' after variable declaration`,
         errorLine,
-        errorColumn + 1,
+        errorColumn + additive,
         code.split(/\r?\n/)
       );
     }
@@ -471,7 +555,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     let id = null;
     if (isDeclaration) {
       if (tokens[current]?.type !== 'identifier') {
-        throw new Error(`Expected function name at ${line}:${column}`);
+				const errorLine = line;
+        const errorColumn = column;
+  
+        ParserError(
+          filename,
+          `Expected function name`,
+          errorLine,
+          errorColumn + 2,
+          code.split(/\r?\n/)
+        );
       }
       id = createNode('identifier', tokens[current]?.value);
       consume();
@@ -483,10 +576,17 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     }
 
     if (tokens[current]?.value !== '(') {
-      throw new Error(
+			const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
         `Expected '(' after function ${
           isDeclaration ? 'declaration' : 'expression'
-        } at ${line}:${column}`
+        }`,
+        errorLine,
+        errorColumn + tokens[current-1]?.value.length - 1,
+        code.split(/\r?\n/)
       );
     }
     consume();
@@ -500,7 +600,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
 
       let paramNameToken = tokens[current];
       if (paramNameToken.type !== 'identifier') {
-        throw new Error(`Expected parameter name at ${line}:${column}`);
+				const errorLine = line;
+        const errorColumn = column;
+  
+        ParserError(
+          filename,
+          `Expected parameter name to be an Identifier`,
+          errorLine,
+          errorColumn - 1,
+          code.split(/\r?\n/)
+        );
       }
       consume();
 
@@ -515,7 +624,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       if (tokens[current]?.value === ':') {
         consume();
         if (tokens[current]?.type !== 'identifier') {
-          throw new Error(`Expected type after colon at ${line}:${column}`);
+					const errorLine = line;
+          const errorColumn = column;
+    
+          ParserError(
+            filename,
+            `Expected type after colon`,
+            errorLine,
+            errorColumn,
+            code.split(/\r?\n/)
+          );
         }
         param.type = tokens[current].value;
         param.loc.end = {
@@ -538,8 +656,19 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     }
 
     if (tokens[current]?.value !== ')') {
-      throw new Error(
-        `Expected ')' after function parameters at ${line}:${column}`
+			const errorLine = line;
+      const errorColumn = column;
+			let additive = 0;
+if (tokens[current - 1]?.type === "identifier") {
+  additive = tokens[current - 1].value.length - 1;
+}
+
+      ParserError(
+        filename,
+        `Expected ')' after function parameters`,
+        errorLine,
+        errorColumn + additive,
+        code.split(/\r?\n/)
       );
     }
     consume();
@@ -547,13 +676,38 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     let returnType = 'Any';
     if (tokens[current]?.value === '->') {
       consume();
+			if (tokens[current]?.type !== TokenTypes.Identifier) {
+				const errorLine = line;
+        const errorColumn = column;
+  
+        ParserError(
+          filename,
+          `Expected a return type after '->'`,
+          errorLine,
+          errorColumn + 1,
+          code.split(/\r?\n/)
+        );
+			}
       let typeToken = tokens[current];
       returnType = typeToken.value;
       consume();
     }
 
     if (tokens[current]?.value !== '{') {
-      throw new Error(`Expected '{' before function body at ${line}:${column}`);
+			const errorLine = line;
+      const errorColumn = column;
+			let additive = 0;
+if (tokens[current - 1]?.type === "identifier") {
+  additive = tokens[current - 1].value.length - 1;
+}
+
+      ParserError(
+        filename,
+        `Expected '{' before function body`,
+        errorLine,
+        errorColumn + additive,
+        code.split(/\r?\n/)
+      );
     }
     consume();
 
@@ -563,7 +717,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     }
 
     if (tokens[current]?.value !== '}') {
-      throw new Error(`Expected '}' after function body at ${line}:${column}`);
+			const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected '}' after function body`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
     }
     const endToken = tokens[current];
     consume();
@@ -622,21 +785,53 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     }
 
     if (tokens[current]?.value !== ')') {
-      throw new Error(`Expected ')' after if condition at ${line}:${column}`);
+			const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected ')' after if condition`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
     }
     consume();
 
     if (tokens[current]?.value !== '{') {
-      throw new Error(`Expected '{' before if body at ${line}:${column}`);
+			const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected '{' before if body`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
     }
     consume();
 
     const consequentBody = [];
-    while (tokens[current]?.value !== ';' && tokens[current]?.value !== '}') {
+    while (tokens[current]?.value !== '}') {
+      if (current >= tokens.length) break;
       consequentBody.push(parseStatement());
     }
-    if (tokens[current]?.value === ';') consume();
-    if (tokens[current]?.value === '}') consume();
+
+    if (tokens[current]?.value !== '}') {
+      const errorLine = line;
+      const errorColumn = column;
+      let additives = 0;
+
+      ParserError(
+        filename,
+        `Expected a '}' after if body`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
+    }
+		consume();
 
     const consequent = {
       type: 'BlockStatement',
@@ -663,7 +858,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         };
       } else {
         if (tokens[current]?.value !== '{') {
-          throw new Error(`Expected '{' after else at ${line}:${column}`);
+					const errorLine = line;
+      const errorColumn = column;
+
+      ParserError(
+        filename,
+        `Expected '{' before else`,
+        errorLine,
+        errorColumn,
+        code.split(/\r?\n/)
+      );
         }
         consume();
 
@@ -958,7 +1162,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
 
   function parseStatement() {
     const startToken = tokens[current];
-
+		
     if (
       tokens[current]?.value === 'var' ||
       tokens[current]?.value === 'const'
@@ -1007,10 +1211,15 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         },
       };
     }
-
-    if (tokens[current]?.value === 'include') {
+		
+		if (tokens[current]?.value === 'include') {
       return parseIncludeLibrary();
     }
+		
+		if (tokens[current]?.value === 'alias') {
+      return parseAliasDeclaration();
+    }
+		
 
     let expr = walk();
 
@@ -1275,8 +1484,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     const startToken = tokens[current];
     consume();
     let id = walk();
-    consume();
-
+    
     if (tokens[current]?.value !== '=') {
       ParserError(
         filename,
@@ -1288,7 +1496,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     }
     consume();
 
-    let value;
+    let typeValue;
     const token = tokens[current];
 
     if (!token) {
@@ -1303,16 +1511,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
 
     switch (token.value) {
       case '{':
-        value = parseObjectType();
+        typeValue = parseObjectType();
         break;
       case '[':
-        value = parseArrayType();
+        typeValue = parseArrayType();
         break;
       default:
         if (token.type === TokenTypes.Identifier) {
-          value = {
+          typeValue = {
             type: 'TypeIdentifier',
-            name: token.value,
+            value: token.value,
             loc: {
               start: { line: token.line, column: token.column },
               end: { line: token.line, column: token.column },
@@ -1333,10 +1541,10 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     return {
       type: 'AliasDeclaration',
       id,
-      value,
+      typeValue,
       loc: {
         start: { line: startToken.line, column: startToken.column },
-        end: value.loc.end,
+        end: typeValue.loc.end,
       },
     };
   }

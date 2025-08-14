@@ -1,6 +1,7 @@
 function TypeCheck(ast, builtInFunctions = {}) {
   const variables = new Map();
-
+  const aliases = new Map();
+	
   const functions = new Map(Object.entries(builtInFunctions));
   const errors = [];
   let currentFunction = null;
@@ -21,13 +22,7 @@ function TypeCheck(ast, builtInFunctions = {}) {
     ].includes(name);
   }
 
-  function declareVar(node) {
-    const decl = node.declarations[0];
-    variables.set(decl.id.value, {
-      type: decl.typeAnnotation?.annotation || 'Any',
-      value: decl.init?.value ?? null,
-    });
-  }
+  
 
   function getTypeFromNode(node) {
     switch (node.type) {
@@ -43,11 +38,15 @@ function TypeCheck(ast, builtInFunctions = {}) {
         return 'Null';
       case 'Identifier': {
         const v = variables.get(node.value);
-        if (!v) {
-          error(`Unknown identifier: ${node.value}`);
-          return 'Any';
-        }
-        return v.type;
+        if (v) {
+					return v.type;
+				}
+        
+				if (aliases.has(node.value)) {
+					return aliases.get(node.value);
+				}
+				
+				error(`Unknown type: ${node.value}`)
       }
       case 'BinaryExpression': {
         const leftType = getTypeFromNode(node.left);
@@ -96,9 +95,20 @@ function TypeCheck(ast, builtInFunctions = {}) {
       );
     }
   }
+	
+	function declareAlias(node) {
+    aliases.set(node.id.value, {
+      value: node.typeValue?.value ?? null,
+    });
+		
+		ast.body.splice(ast.body.indexOf(node), 1);
+  }
 
   function checkStatement(stmt) {
     switch (stmt.type) {
+			case 'AliasDeclaration':
+				declareAlias(stmt);
+				break;
       case 'VariableDeclaration':
         declareVar(stmt);
         break;
@@ -274,7 +284,7 @@ function Compiler(ast) {
   function declareVar(name) {
     const currentScope = scopes[scopes.length - 1];
     if (!currentScope.has(name)) currentScope.set(name, variableIndex++);
-    return currentScope.get(name);
+    return currentScope.get(name) - 1;
   }
 
   const functionStack = [];

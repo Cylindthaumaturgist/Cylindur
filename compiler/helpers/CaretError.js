@@ -77,7 +77,7 @@ export default class CaretError extends Error {
 
     const RESET = '\x1b[0m';
     const BOLD = '\x1b[1m';
-    const GRAY = '\x1b[37m';
+    const GRAY = '\x1b[90m';
     const H_START = '\u0000';
     const H_END = '\u0001';
     const keywords = new Set([
@@ -259,7 +259,7 @@ export default class CaretError extends Error {
         coloredLine += out;
       }
 
-      const linePrefix = `${prefix}${prefix.length === 0 ? '' : ' '}${GRAY}${lineNumber}${RESET} |  `;
+      const linePrefix = `${prefix}${prefix.length === 0 ? '' : ' '}${GRAY}${lineNumber} |${RESET}  `;
       errorMsg += `${linePrefix}${coloredLine}\n`;
 
       if (isErrorLine) {

@@ -1,6 +1,6 @@
 include#<SystemLogging>;
-var a = 0;
 
-while (a < 10) {
-	a++
+fun isEven(n: Number) -> Boolean {
+  return n % 2 === 0;
 }
+var test: Boolean = isEven(100);

@@ -49,7 +49,7 @@ export function Lexer(code, filename = 'unknown.cy') {
     'undefined',
     'include',
   ];
-  const operations = ['+', '-', '*', '/', '<', '>', '%'];
+  const operations = ['+', '-', '*', '/', '<', '>', '%', '='];
   const symbols = [
     '_',
     ';',
