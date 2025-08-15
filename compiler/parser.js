@@ -10,7 +10,7 @@ function ParserError(file, message, line, column, sourceLines) {
       line,
       column,
       sourceLines,
-      'dark+'
+      'one_dark'
     ).toString()
   );
   process.exit(1);
@@ -45,8 +45,8 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           column: loc.startColumn || column,
         },
         end: {
-          line: loc.endLine || tokens[current - 1]?.line || line,
-          column: loc.endColumn || tokens[current - 1]?.column || column,
+          line: loc.endLine || line,
+          column: loc.endColumn || column,
         },
       },
     };
@@ -138,9 +138,12 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       let identifierNode = createNode('Identifier', token.value, {
         startLine,
         startColumn,
+				endLine: line,
+        endColumn: column,
       });
+			
       consume();
-
+			
       if (tokens[current]?.value === '++' || tokens[current]?.value === '--') {
         const opToken = tokens[current];
         consume();
@@ -233,7 +236,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           },
         };
       }
-
+			
       return identifierNode;
     }
 
@@ -510,6 +513,10 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
   additive = tokens[current].value.length - 1;
 } else if (tokens[current]?.type === "identifier") {
 	additive = tokens[current].value.length + 1;
+} else if (init?.type === "StringLiteral") {
+	
+	additive = (init?.value.length) + 1;
+	
 }
       ParserError(
         filename,
@@ -1230,7 +1237,6 @@ if (tokens[current - 1]?.type === "identifier") {
       if (tokens[current]?.value !== ';') {
         const errorLine = value.loc.end.line;
         const errorColumn = value.loc.end.column;
-        console.log(value);
         ParserError(
           filename,
           `Expected ';' after assignment expression`,
@@ -1303,7 +1309,7 @@ if (tokens[current - 1]?.type === "identifier") {
       let additive = 0;
       let addLine = 0;
       if (expr?.type === 'MemberExpression') {
-        additive = expr.property.value.length;
+        additive = expr.property.value.length - 1;
       } else if (expr?.type === 'ArrayExpression') {
         additive = expr.elements.length > 0 ? expr.elements.length : 1;
       } else if (expr?.type === 'ObjectExpression') {
@@ -1311,8 +1317,7 @@ if (tokens[current - 1]?.type === "identifier") {
       } else if (expr?.type === 'UnaryExpression') {
         additive = expr.operator.length > 0 ? expr.operator.length : 1;
       } else if (expr?.type === 'Identifier') {
-        errorColumn = (expr.value.length ?? 0) + 3;
-        addLine = 1;
+        errorColumn = (expr.value.length ?? 0) + 1;
       } else if (expr?.type === 'CallExpression') {
         additive = 0;
       }

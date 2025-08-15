@@ -22,7 +22,14 @@ function TypeCheck(ast, builtInFunctions = {}) {
     ].includes(name);
   }
 
-  
+  function declareVar(node) {
+		node.declarations.forEach(decl => {
+			variables.set(decl.id.value, {
+				type: decl.typeAnnotation?.annotation || 'Any',
+				
+			})
+		});
+	}
 
   function getTypeFromNode(node) {
     switch (node.type) {
@@ -246,8 +253,6 @@ function Compiler(ast) {
     array: 0xe3,
     object: 0xe4,
     null: 0xe5,
-    CONST_LEN: 0xf0,
-    BYTE_LEN: 0xf1,
     HALT: 0xff,
   };
 
@@ -332,7 +337,7 @@ function Compiler(ast) {
         } else {
           const idx = getVarIndex(node.value);
           writeUint8(bytes, opMap.LOAD_VAR);
-          writeUint32(bytes, idx);
+          writeUint32(bytes, idx - 1);
         }
         break;
       }
@@ -518,18 +523,37 @@ function Compiler(ast) {
 
         if (
           expr.type === 'CallExpression' &&
-          expr.callee.type === 'MemberExpression' &&
-          expr.callee.object.value === 'System' &&
-          expr.callee.property.value === 'Log' &&
-          includedBuiltIn.has('SystemLogging')
+          expr.callee.type === 'MemberExpression'
         ) {
-          expr.arguments.forEach((arg) => compileExpression(arg));
-          writeUint8(bytes, opMap.PRINT);
-          writeUint32(bytes, expr.arguments.length);
-        } else if (!includedBuiltIn.has('SystemLogging')) {
-          throw new Error(
-            "To use System.Log(); You must include built in library: 'SystemLogging'"
-          );
+          if (
+						expr.callee.object.value === 'System' &&
+            expr.callee.property.value === 'Log' &&
+            includedBuiltIn.has('SystemLogging')
+					) {
+						expr.arguments.forEach((arg) => compileExpression(arg));
+						if (expr.arguments.length > 0) {
+              writeUint8(bytes, opMap.PRINT);
+              writeUint32(bytes, expr.arguments.length);
+						}
+					} else if (
+						expr.callee.object.value === 'System' &&
+            expr.callee.property.value === 'Err' &&
+            includedBuiltIn.has('SystemLogging')
+					) {
+						expr.arguments.forEach((arg) => compileExpression(arg));
+						if (!constants.includes("\x1b[38;2;244;71;71m")) constants.push("\x1b[38;2;244;71;71m");
+						if (expr.arguments.length > 0) {
+							writeUint8(bytes, opMap.LOAD_CONST);
+              writeUint32(bytes, constants.indexOf("\x1b[38;2;244;71;71m"));
+							writeUint8(bytes, opMap.CONCAT);
+              writeUint8(bytes, opMap.PRINT);
+              writeUint32(bytes, expr.arguments.length);
+						}
+					} else if (!includedBuiltIn.has('SystemLogging')) {
+            throw new Error(
+              `To use ${expr.callee.object.value}.${expr.callee.property.value}(); You must include built in library: 'SystemLogging'`
+            );
+          }
         }
 
         break;
@@ -610,7 +634,7 @@ function Compiler(ast) {
 
   const header = [0xbe, 0xef, 0xc0, 0xde, ver];
 
-  const constantsBytes = [opMap.CONST_LEN];
+  const constantsBytes = []; // [opMap.CONST_LEN];
   writeUint32(constantsBytes, constants.length);
   for (const c of constants) {
     if (typeof c === 'number') {
@@ -629,7 +653,7 @@ function Compiler(ast) {
     }
   }
 
-  const bytecodesLengthBytes = [opMap.BYTE_LEN];
+  const bytecodesLengthBytes = []; // [opMap.BYTE_LEN];
   writeUint32(bytecodesLengthBytes, bytes.length);
 
   return Buffer.from([

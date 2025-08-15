@@ -1,6 +1,6 @@
 include#<SystemLogging>;
 
-fun isEven(n: Number) -> Boolean {
-  return n % 2 === 0;
-}
-var test: Boolean = isEven(100);
+const pi = 3.14;
+var radius = 10;
+var area = (radius * radius) * pi;
+System.Log("Area of Circle with radius " + radius + " is: " + area);

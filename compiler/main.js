@@ -19,4 +19,4 @@ console.log(
     .join(' ')
 );
 fs.writeFileSync(cylinder, compiled);
-console.dir(parsed, {depth: null})
+//console.dir(parsed, {depth: null})

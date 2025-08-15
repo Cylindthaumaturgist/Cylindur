@@ -43,7 +43,7 @@ export default class CaretError extends Error {
   ) {
     const Scheme = ColorSchemes[colorScheme];
     const RED = '\x1b[38;2;244;71;71m';
-
+		
     if (!Scheme) {
       const YELLOW = '\x1b[33m';
       const RESET = '\x1b[0m';
@@ -265,7 +265,7 @@ export default class CaretError extends Error {
       if (isErrorLine) {
         const visiblePad = stripAnsi(linePrefix).length;
         const caretPos = visiblePad + (column - 1);
-        errorMsg += ' '.repeat(Math.max(0, caretPos)) + `${RED}^${RESET}\n`;
+        errorMsg += ' '.repeat(Math.max(0, caretPos % process.stdout.columns)) + `${RED}^${RESET}\n`;
       }
     }
 
