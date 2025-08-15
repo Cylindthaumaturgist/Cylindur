@@ -97,15 +97,15 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       let expr = parseExpression();
       if (tokens[current]?.value !== ')') {
         const errorLine = line;
-      const errorColumn = column;
+        const errorColumn = column;
 
-      ParserError(
-        filename,
-        `Expected ')'`,
-        errorLine,
-        errorColumn,
-        code.split(/\r?\n/)
-      );
+        ParserError(
+          filename,
+          `Expected ')'`,
+          errorLine,
+          errorColumn,
+          code.split(/\r?\n/)
+        );
       }
       const endToken = tokens[current];
       consume();
@@ -141,8 +141,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
 				endLine: line,
         endColumn: column,
       });
-			
-      consume();
+			consume();
 			
       if (tokens[current]?.value === '++' || tokens[current]?.value === '--') {
         const opToken = tokens[current];
@@ -283,16 +282,16 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           keyToken.type !== TokenTypes.Identifier &&
           keyToken.type !== TokenTypes.String
         ) {
-					const errorLine = line;
-      const errorColumn = column;
+          const errorLine = line;
+          const errorColumn = column;
 
-      ParserError(
-        filename,
-        `Expected property name`,
-        errorLine,
-        errorColumn,
-        code.split(/\r?\n/)
-      );
+          ParserError(
+            filename,
+            `Expected property name`,
+            errorLine,
+            errorColumn,
+            code.split(/\r?\n/)
+          );
         }
 
         const key = keyToken.value;
@@ -350,15 +349,15 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     }
 
     const errorLine = line;
-      const errorColumn = column;
+    const errorColumn = column;
 
-      ParserError(
-        filename,
-        `Unexpected token: ${token.value}`,
-        errorLine,
-        errorColumn - token.value.length,
-        code.split(/\r?\n/)
-      );
+    ParserError(
+      filename,
+      `Unexpected token: ${token.value}`,
+      errorLine,
+      errorColumn - token.value.length,
+      code.split(/\r?\n/)
+    );
     erred = true;
     consume();
   }
@@ -421,9 +420,9 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     const startToken = tokens[current];
     let kind = tokens[current].value === 'const' ? 'Constant' : 'Changeable';
     consume();
-		
-		if (tokens[current]?.type !== TokenTypes.Identifier) {
-			const errorLine = line;
+
+    if (tokens[current]?.type !== TokenTypes.Identifier) {
+      const errorLine = line;
       const errorColumn = column;
 
       ParserError(
@@ -433,17 +432,17 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         errorColumn + 2,
         code.split(/\r?\n/)
       );
-		}
+    }
 
     let id = walk();
     let typeAnnotation = null;
 
     if (tokens[current]?.value === ':') {
       consume();
-			if (tokens[current]?.type !== TokenTypes.Identifier) {
-				const errorLine = line;
+      if (tokens[current]?.type !== TokenTypes.Identifier) {
+        const errorLine = line;
         const errorColumn = column;
-  
+
         ParserError(
           filename,
           `Expected variable type after ':'`,
@@ -451,7 +450,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           errorColumn,
           code.split(/\r?\n/)
         );
-			}
+      }
       typeAnnotation = {
         type: 'TypeAnnotation',
         annotation: tokens[current].value,
@@ -462,13 +461,13 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       consume();
     } else {
       if (tokens[current]?.value !== '=') {
-				const errorLine = line;
+        const errorLine = line;
         const errorColumn = column;
-				let additive = 0;
-if (tokens[current - 1]?.type === "identifier") {
-  additive = tokens[current - 1].value.length - 1;
-}
-  
+        let additive = 0;
+        if (tokens[current - 1]?.type === 'identifier') {
+          additive = tokens[current - 1].value.length - 1;
+        }
+
         ParserError(
           filename,
           `Expected '=' after variable name`,
@@ -488,8 +487,8 @@ if (tokens[current - 1]?.type === "identifier") {
 
     consume();
     let init = parseExpression();
-		if (!init) {
-			const errorLine = line;
+    if (!init) {
+      const errorLine = line;
       const errorColumn = column;
 
       ParserError(
@@ -499,25 +498,27 @@ if (tokens[current - 1]?.type === "identifier") {
         errorColumn,
         code.split(/\r?\n/)
       );
-		}
+    }
     if (init?.type === 'AssignmentExpression') init = init.right;
 
     if (tokens[current]?.value !== ';') {
       const errorLine = init?.loc?.end?.line ?? line;
       const errorColumn = init?.loc?.end?.column ?? column;
-      if (current > (tokens.length - 1)) {
-				current = tokens.length - 1;
-			}
-			let additive = 0;
-if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") {
-  additive = tokens[current].value.length - 1;
-} else if (tokens[current]?.type === "identifier") {
-	additive = tokens[current].value.length + 1;
-} else if (init?.type === "StringLiteral") {
-	
-	additive = (init?.value.length) + 1;
-	
-}
+      if (current > tokens.length - 1) {
+        current = tokens.length - 1;
+      }
+      let additive = 0;
+      if (
+        tokens[current - 1]?.value === ':' &&
+        tokens[current]?.type === 'identifier'
+      ) {
+        additive = tokens[current].value.length - 1;
+      } else if (tokens[current]?.type === 'identifier') {
+        additive = tokens[current].value.length + 1;
+      } else if (init?.type === 'StringLiteral') {
+        additive = init?.value.length + 1;
+      }
+
       ParserError(
         filename,
         `Expected ';' after variable declaration`,
@@ -562,9 +563,9 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
     let id = null;
     if (isDeclaration) {
       if (tokens[current]?.type !== 'identifier') {
-				const errorLine = line;
+        const errorLine = line;
         const errorColumn = column;
-  
+
         ParserError(
           filename,
           `Expected function name`,
@@ -583,7 +584,7 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
     }
 
     if (tokens[current]?.value !== '(') {
-			const errorLine = line;
+      const errorLine = line;
       const errorColumn = column;
 
       ParserError(
@@ -592,7 +593,7 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
           isDeclaration ? 'declaration' : 'expression'
         }`,
         errorLine,
-        errorColumn + tokens[current-1]?.value.length - 1,
+        errorColumn + tokens[current - 1]?.value.length - 1,
         code.split(/\r?\n/)
       );
     }
@@ -607,9 +608,9 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
 
       let paramNameToken = tokens[current];
       if (paramNameToken.type !== 'identifier') {
-				const errorLine = line;
+        const errorLine = line;
         const errorColumn = column;
-  
+
         ParserError(
           filename,
           `Expected parameter name to be an Identifier`,
@@ -631,9 +632,9 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
       if (tokens[current]?.value === ':') {
         consume();
         if (tokens[current]?.type !== 'identifier') {
-					const errorLine = line;
+          const errorLine = line;
           const errorColumn = column;
-    
+
           ParserError(
             filename,
             `Expected type after colon`,
@@ -663,12 +664,12 @@ if (tokens[current-1]?.value === ":" && tokens[current]?.type === "identifier") 
     }
 
     if (tokens[current]?.value !== ')') {
-			const errorLine = line;
+      const errorLine = line;
       const errorColumn = column;
-			let additive = 0;
-if (tokens[current - 1]?.type === "identifier") {
-  additive = tokens[current - 1].value.length - 1;
-}
+      let additive = 0;
+      if (tokens[current - 1]?.type === 'identifier') {
+        additive = tokens[current - 1].value.length - 1;
+      }
 
       ParserError(
         filename,
@@ -683,10 +684,10 @@ if (tokens[current - 1]?.type === "identifier") {
     let returnType = 'Any';
     if (tokens[current]?.value === '->') {
       consume();
-			if (tokens[current]?.type !== TokenTypes.Identifier) {
-				const errorLine = line;
+      if (tokens[current]?.type !== TokenTypes.Identifier) {
+        const errorLine = line;
         const errorColumn = column;
-  
+
         ParserError(
           filename,
           `Expected a return type after '->'`,
@@ -694,19 +695,19 @@ if (tokens[current - 1]?.type === "identifier") {
           errorColumn + 1,
           code.split(/\r?\n/)
         );
-			}
+      }
       let typeToken = tokens[current];
       returnType = typeToken.value;
       consume();
     }
 
     if (tokens[current]?.value !== '{') {
-			const errorLine = line;
+      const errorLine = line;
       const errorColumn = column;
-			let additive = 0;
-if (tokens[current - 1]?.type === "identifier") {
-  additive = tokens[current - 1].value.length - 1;
-}
+      let additive = 0;
+      if (tokens[current - 1]?.type === 'identifier') {
+        additive = tokens[current - 1].value.length - 1;
+      }
 
       ParserError(
         filename,
@@ -724,7 +725,7 @@ if (tokens[current - 1]?.type === "identifier") {
     }
 
     if (tokens[current]?.value !== '}') {
-			const errorLine = line;
+      const errorLine = line;
       const errorColumn = column;
 
       ParserError(
@@ -792,7 +793,7 @@ if (tokens[current - 1]?.type === "identifier") {
     }
 
     if (tokens[current]?.value !== ')') {
-			const errorLine = line;
+      const errorLine = line;
       const errorColumn = column;
 
       ParserError(
@@ -806,7 +807,7 @@ if (tokens[current - 1]?.type === "identifier") {
     consume();
 
     if (tokens[current]?.value !== '{') {
-			const errorLine = line;
+      const errorLine = line;
       const errorColumn = column;
 
       ParserError(
@@ -838,7 +839,7 @@ if (tokens[current - 1]?.type === "identifier") {
         code.split(/\r?\n/)
       );
     }
-		consume();
+    consume();
 
     const consequent = {
       type: 'BlockStatement',
@@ -865,16 +866,16 @@ if (tokens[current - 1]?.type === "identifier") {
         };
       } else {
         if (tokens[current]?.value !== '{') {
-					const errorLine = line;
-      const errorColumn = column;
+          const errorLine = line;
+          const errorColumn = column;
 
-      ParserError(
-        filename,
-        `Expected '{' before else`,
-        errorLine,
-        errorColumn,
-        code.split(/\r?\n/)
-      );
+          ParserError(
+            filename,
+            `Expected '{' before else`,
+            errorLine,
+            errorColumn,
+            code.split(/\r?\n/)
+          );
         }
         consume();
 
@@ -1169,7 +1170,7 @@ if (tokens[current - 1]?.type === "identifier") {
 
   function parseStatement() {
     const startToken = tokens[current];
-		
+
     if (
       tokens[current]?.value === 'var' ||
       tokens[current]?.value === 'const'
@@ -1218,15 +1219,14 @@ if (tokens[current - 1]?.type === "identifier") {
         },
       };
     }
-		
-		if (tokens[current]?.value === 'include') {
+
+    if (tokens[current]?.value === 'include') {
       return parseIncludeLibrary();
     }
-		
-		if (tokens[current]?.value === 'alias') {
+
+    if (tokens[current]?.value === 'alias') {
       return parseAliasDeclaration();
     }
-		
 
     let expr = walk();
 
@@ -1489,7 +1489,7 @@ if (tokens[current - 1]?.type === "identifier") {
     const startToken = tokens[current];
     consume();
     let id = walk();
-    
+
     if (tokens[current]?.value !== '=') {
       ParserError(
         filename,

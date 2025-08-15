@@ -1,7 +1,7 @@
 function TypeCheck(ast, builtInFunctions = {}) {
   const variables = new Map();
   const aliases = new Map();
-	
+
   const functions = new Map(Object.entries(builtInFunctions));
   const errors = [];
   let currentFunction = null;
@@ -23,13 +23,12 @@ function TypeCheck(ast, builtInFunctions = {}) {
   }
 
   function declareVar(node) {
-		node.declarations.forEach(decl => {
-			variables.set(decl.id.value, {
-				type: decl.typeAnnotation?.annotation || 'Any',
-				
-			})
-		});
-	}
+    node.declarations.forEach((decl) => {
+      variables.set(decl.id.value, {
+        type: decl.typeAnnotation?.annotation || 'Any',
+      });
+    });
+  }
 
   function getTypeFromNode(node) {
     switch (node.type) {
@@ -46,14 +45,14 @@ function TypeCheck(ast, builtInFunctions = {}) {
       case 'Identifier': {
         const v = variables.get(node.value);
         if (v) {
-					return v.type;
-				}
-        
-				if (aliases.has(node.value)) {
-					return aliases.get(node.value);
-				}
-				
-				error(`Unknown type: ${node.value}`)
+          return v.type;
+        }
+
+        if (aliases.has(node.value)) {
+          return aliases.get(node.value);
+        }
+
+        error(`Unknown type: ${node.value}`);
       }
       case 'BinaryExpression': {
         const leftType = getTypeFromNode(node.left);
@@ -102,20 +101,20 @@ function TypeCheck(ast, builtInFunctions = {}) {
       );
     }
   }
-	
-	function declareAlias(node) {
+
+  function declareAlias(node) {
     aliases.set(node.id.value, {
       value: node.typeValue?.value ?? null,
     });
-		
-		ast.body.splice(ast.body.indexOf(node), 1);
+
+    ast.body.splice(ast.body.indexOf(node), 1);
   }
 
   function checkStatement(stmt) {
     switch (stmt.type) {
-			case 'AliasDeclaration':
-				declareAlias(stmt);
-				break;
+      case 'AliasDeclaration':
+        declareAlias(stmt);
+        break;
       case 'VariableDeclaration':
         declareVar(stmt);
         break;
@@ -526,30 +525,31 @@ function Compiler(ast) {
           expr.callee.type === 'MemberExpression'
         ) {
           if (
-						expr.callee.object.value === 'System' &&
+            expr.callee.object.value === 'System' &&
             expr.callee.property.value === 'Log' &&
             includedBuiltIn.has('SystemLogging')
-					) {
-						expr.arguments.forEach((arg) => compileExpression(arg));
-						if (expr.arguments.length > 0) {
+          ) {
+            expr.arguments.forEach((arg) => compileExpression(arg));
+            if (expr.arguments.length > 0) {
               writeUint8(bytes, opMap.PRINT);
               writeUint32(bytes, expr.arguments.length);
-						}
-					} else if (
-						expr.callee.object.value === 'System' &&
+            }
+          } else if (
+            expr.callee.object.value === 'System' &&
             expr.callee.property.value === 'Err' &&
             includedBuiltIn.has('SystemLogging')
-					) {
-						expr.arguments.forEach((arg) => compileExpression(arg));
-						if (!constants.includes("\x1b[38;2;244;71;71m")) constants.push("\x1b[38;2;244;71;71m");
-						if (expr.arguments.length > 0) {
-							writeUint8(bytes, opMap.LOAD_CONST);
-              writeUint32(bytes, constants.indexOf("\x1b[38;2;244;71;71m"));
-							writeUint8(bytes, opMap.CONCAT);
+          ) {
+            expr.arguments.forEach((arg) => compileExpression(arg));
+            if (!constants.includes('\x1b[38;2;244;71;71m'))
+              constants.push('\x1b[38;2;244;71;71m');
+            if (expr.arguments.length > 0) {
+              writeUint8(bytes, opMap.LOAD_CONST);
+              writeUint32(bytes, constants.indexOf('\x1b[38;2;244;71;71m'));
+              writeUint8(bytes, opMap.CONCAT);
               writeUint8(bytes, opMap.PRINT);
               writeUint32(bytes, expr.arguments.length);
-						}
-					} else if (!includedBuiltIn.has('SystemLogging')) {
+            }
+          } else if (!includedBuiltIn.has('SystemLogging')) {
             throw new Error(
               `To use ${expr.callee.object.value}.${expr.callee.property.value}(); You must include built in library: 'SystemLogging'`
             );

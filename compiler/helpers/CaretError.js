@@ -265,6 +265,9 @@ export default class CaretError extends Error {
       if (isErrorLine) {
         const visiblePad = stripAnsi(linePrefix).length;
         const caretPos = visiblePad + (column - 1);
+        errorMsg +=
+          ' '.repeat(Math.max(0, caretPos % process.stdout.columns)) +
+          `${RED}^${RESET}\n`;
         errorMsg += ' '.repeat(Math.max(0, caretPos % process.stdout.columns)) + `${RED}^${RESET}\n`;
       }
     }
