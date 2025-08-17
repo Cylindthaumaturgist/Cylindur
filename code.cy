@@ -1,7 +1,0 @@
-include#<SystemLogging>;
-
-fun Add(x, y) {
-	return x + y;
-}
-
-System.Log(Add(10, 10));

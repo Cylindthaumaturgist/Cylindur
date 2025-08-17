@@ -350,33 +350,26 @@ function Compiler(ast) {
         type: 'variable',
         value: 2.7182818,
 			},
-      Pow: {
+      Pow2: {
         requiredLib: 'Mathematics',
         compile: (expr, bytes, constants) => {
-          expr.arguments.forEach((arg) => compileExpression(arg));
+					declareVar(`${expr.callee.object.value}_${expr.callee.property.value}`);
           if (expr.arguments.length > 0) {
-            const idx = getVarIndex(node.id.value);
-        const argc = node.params.length;
-        writeUint8(bytes, opMap.DEF_FUNC);
-        writeUint32(bytes, idx);
-        writeUint32(bytes, argc);
-
-        const localScope = new Map();
-        scopes.push(localScope);
-
-        const paramMap = new Map();
-        node.params.forEach((param, i) => paramMap.set(param.name, i));
-        functionStack.push({ params: paramMap });
-
-        let hasReturn = false;
-        node.body.forEach((stmt) => {
-          compileNode(stmt);
-          if (stmt.type === 'ReturnStatement') hasReturn = true;
-        });
-        if (!hasReturn) writeUint8(bytes, opMap.RETURN);
-
-        functionStack.pop();
-        scopes.pop();
+            const idx = getVarIndex(`${expr.callee.object.value}_${expr.callee.property.value}`);
+            const argc = 1;
+            writeUint8(bytes, opMap.DEF_FUNC);
+            writeUint32(bytes, idx - 1);
+            writeUint32(bytes, argc);
+            
+						writeUint8(bytes, opMap.LOAD_PARAM);
+						writeUint32(bytes, 0);
+						writeUint8(bytes, opMap.LOAD_PARAM);
+						writeUint32(bytes, 0);
+						writeUint8(bytes, opMap.MUL);
+            writeUint8(bytes, opMap.RETURN);
+						
+            writeUint8(bytes, opMap.LOAD_VAR);
+						writeUint32(bytes, idx - 1);
           }
         },
       },

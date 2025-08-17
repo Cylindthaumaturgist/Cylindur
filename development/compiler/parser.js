@@ -1,5 +1,5 @@
 import { TokenTypes } from './lexer.js';
-import CaretError from '../helpers/CaretError.js';
+import CaretError from './helpers/CaretError.js';
 
 function ParserError(file, message, line, column, sourceLines) {
   console.log(

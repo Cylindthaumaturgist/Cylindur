@@ -1,4 +1,4 @@
-import CaretError from '../helpers/CaretError.js';
+import CaretError from './helpers/CaretError.js';
 
 export const TokenTypes = {
   Keyword: 'keyword',

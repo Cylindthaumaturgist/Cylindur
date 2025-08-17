@@ -9,7 +9,7 @@ const code = fs.readFileSync(`../${filename}`, 'utf-8');
 const Lexed = Lexer(code, filename);
 const parsed = Parser(Lexed, code, filename);
 
-//console.dir(parsed, {depth: null})
+console.dir(parsed, {depth: null})
 
 const cylinder = filename.split('.')[0] + '.cylinder';
 const compiled = Compiler(parsed);

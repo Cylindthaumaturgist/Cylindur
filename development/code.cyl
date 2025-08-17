@@ -1,7 +1,8 @@
 include#<SystemLogging>;
+include#<Mathematics>;
 
-fun Add(x, y) {
+const x = Math.Pow2(10);
+fun Add(x,y) {
 	return x + y;
 }
-
-System.Log(Add(10, 10));
+System.Log(Add(x, 10));
