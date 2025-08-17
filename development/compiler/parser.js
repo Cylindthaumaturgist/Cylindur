@@ -1,5 +1,5 @@
 import { TokenTypes } from './lexer.js';
-import CaretError from './helpers/CaretError.js';
+import CaretError from '../helpers/CaretError.js';
 
 function ParserError(file, message, line, column, sourceLines) {
   console.log(
@@ -502,12 +502,14 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     if (init?.type === 'AssignmentExpression') init = init.right;
 
     if (tokens[current]?.value !== ';') {
+			console.log(init)
       const errorLine = init?.loc?.end?.line ?? line;
       const errorColumn = init?.loc?.end?.column ?? column;
       if (current > tokens.length - 1) {
         current = tokens.length - 1;
       }
       let additive = 0;
+			let subLine = 0;
       if (
         tokens[current - 1]?.value === ':' &&
         tokens[current]?.type === 'identifier'
@@ -517,12 +519,12 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         additive = tokens[current].value.length + 1;
       } else if (init?.type === 'StringLiteral') {
         additive = init?.value.length + 1;
-      }
-
+      } 
+			
       ParserError(
         filename,
         `Expected ';' after variable declaration`,
-        errorLine,
+        errorLine + subLine,
         errorColumn + additive,
         code.split(/\r?\n/)
       );
@@ -1112,7 +1114,6 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     const startToken = tokens[current];
     let expr = walk();
     expr = parseBinaryExpression(expr, 0);
-
     const assignmentOps = ['=', '+=', '-=', '*=', '/=', '%=', '**='];
 
     if (
@@ -1164,7 +1165,6 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         },
       };
     }
-
     return expr;
   }
 

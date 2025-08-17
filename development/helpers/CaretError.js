@@ -268,7 +268,6 @@ export default class CaretError extends Error {
         errorMsg +=
           ' '.repeat(Math.max(0, caretPos % process.stdout.columns)) +
           `${RED}^${RESET}\n`;
-        errorMsg += ' '.repeat(Math.max(0, caretPos % process.stdout.columns)) + `${RED}^${RESET}\n`;
       }
     }
 

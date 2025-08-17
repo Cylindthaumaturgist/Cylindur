@@ -55,8 +55,10 @@ function TypeCheck(ast, builtInFunctions = {}) {
         error(`Unknown type: ${node.value}`);
       }
       case 'BinaryExpression': {
+        console.log(node.left);
         const leftType = getTypeFromNode(node.left);
         const rightType = getTypeFromNode(node.right);
+
         if (
           ['==', '===', '!=', '!==', '<', '>', '<=', '>='].includes(
             node.operator
@@ -64,12 +66,17 @@ function TypeCheck(ast, builtInFunctions = {}) {
         ) {
           return 'Boolean';
         }
-        if (leftType === rightType) return leftType;
-        if (leftType === 'Any') return leftType;
-        error(
-          `Type mismatch in binary expression: ${leftType} ${node.operator} ${rightType}`
-        );
-        return 'Any';
+
+        if (leftType === 'Any' || rightType === 'Any') return 'Any';
+
+        if (leftType !== rightType) {
+          error(
+            `Type mismatch in binary expression: ${leftType} ${node.operator} ${rightType}`
+          );
+          return 'Any';
+        }
+
+        return leftType;
       }
 
       case 'MemberExpression':
@@ -195,7 +202,7 @@ function TypeCheck(ast, builtInFunctions = {}) {
 }
 
 function Compiler(ast) {
-  const builtInFunctions = {
+  const builtInFunctionsType = {
     System: {
       Log: {
         params: [{ name: 'args', type: 'Any', variadic: true }],
@@ -205,11 +212,13 @@ function Compiler(ast) {
   };
 
   try {
-    TypeCheck(ast, builtInFunctions);
+    TypeCheck(ast, builtInFunctionsType);
   } catch (e) {
     console.error(e.message);
     process.exit(1);
   }
+
+  const builtInIncludes = new Set(['Mathematics']);
 
   const bytes = [];
   const constants = [];
@@ -246,6 +255,7 @@ function Compiler(ast) {
     JMP: 0x17,
     JMP_IF_FALSE: 0x18,
     MODULUS: 0x19,
+    
     number: 0xe0,
     string: 0xe1,
     boolean: 0xe2,
@@ -290,6 +300,88 @@ function Compiler(ast) {
     if (!currentScope.has(name)) currentScope.set(name, variableIndex++);
     return currentScope.get(name) - 1;
   }
+
+  const builtInHandlers = {
+    System: {
+      Log: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+          }
+        },
+      },
+      Err: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          if (!constants.includes('\x1b[38;2;244;71;71m'))
+            constants.push('\x1b[38;2;244;71;71m');
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf('\x1b[38;2;244;71;71m'));
+            writeUint8(bytes, opMap.CONCAT);
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+          }
+        },
+      },
+    },
+    Math: {
+      PI: {
+        requiredLib: 'Mathematics',
+        type: 'variable',
+        value: 3.141592653589793,
+      },
+      E: {
+        requiredLib: 'Mathematics',
+        type: 'variable',
+        value: 2.718281828459045,
+      },
+			PI32: {
+				requiredLib: 'Mathematics',
+        type: 'variable',
+        value: 3.1415926,
+			},
+			E32: {
+				requiredLib: 'Mathematics',
+        type: 'variable',
+        value: 2.7182818,
+			},
+      Pow: {
+        requiredLib: 'Mathematics',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          if (expr.arguments.length > 0) {
+            const idx = getVarIndex(node.id.value);
+        const argc = node.params.length;
+        writeUint8(bytes, opMap.DEF_FUNC);
+        writeUint32(bytes, idx);
+        writeUint32(bytes, argc);
+
+        const localScope = new Map();
+        scopes.push(localScope);
+
+        const paramMap = new Map();
+        node.params.forEach((param, i) => paramMap.set(param.name, i));
+        functionStack.push({ params: paramMap });
+
+        let hasReturn = false;
+        node.body.forEach((stmt) => {
+          compileNode(stmt);
+          if (stmt.type === 'ReturnStatement') hasReturn = true;
+        });
+        if (!hasReturn) writeUint8(bytes, opMap.RETURN);
+
+        functionStack.pop();
+        scopes.pop();
+          }
+        },
+      },
+    },
+  };
 
   const functionStack = [];
 
@@ -341,23 +433,37 @@ function Compiler(ast) {
         break;
       }
       case 'CallExpression': {
-        const funcContext = functionStack[functionStack.length - 1];
-        const inParams = funcContext?.params.has(node.callee.value);
-        const inScope = scopes[scopes.length - 1].has(node.callee.value);
-        const funcIndex = getVarIndex(node.callee.value);
+  let funcIndex;
 
-        writeUint8(
-          bytes,
-          inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
-        );
-        writeUint32(bytes, funcIndex);
+  if (node.callee.type === 'Identifier') {
+    const name = node.callee.value;
+    const funcContext = functionStack[functionStack.length - 1];
+    const inParams = funcContext?.params.has(name);
+    const inScope = scopes[scopes.length - 1].has(name);
 
-        node.arguments.forEach((arg) => compileExpression(arg));
+    funcIndex = getVarIndex(name);
+    writeUint8(
+      bytes,
+      inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
+    );
+    writeUint32(bytes, funcIndex);
+  } else if (node.callee.type === 'MemberExpression') {
+    const objectName = node.callee.object.value;
+    const propName = node.callee.property.value;
 
-        writeUint8(bytes, opMap.CALL);
-        writeUint32(bytes, node.arguments.length);
-        break;
-      }
+    funcIndex = builtInHandlers[objectName]?.[propName];
+    if (funcIndex === undefined) throw new Error(`Unknown function ${objectName}.${propName}`);
+		funcIndex?.compile(node, bytes, constants)
+  } else {
+    throw new Error(`Unsupported callee type: ${node.callee.type}`);
+  }
+
+  node.arguments.forEach((arg) => compileExpression(arg));
+
+  writeUint8(bytes, opMap.CALL);
+  writeUint32(bytes, node.arguments.length);
+  break;
+}
       case 'BinaryExpression': {
         const isConcat =
           node.operator === '+' &&
@@ -392,6 +498,20 @@ function Compiler(ast) {
         break;
       }
 
+      case 'MemberExpression': {
+        const objectName = node.object.value;
+        const propertyName = node.property.value;
+        const handler = builtInHandlers[objectName][propertyName];
+
+        if (!handler)
+          throw new Error(`Unknown member: ${objectName}.${propertyName}`);
+        if (handler.type === 'variable') {
+          if (!constants.includes(handler.value)) constants.push(handler.value);
+          writeUint8(bytes, opMap.LOAD_CONST);
+          writeUint32(bytes, constants.indexOf(handler.value));
+        }
+        break;
+      }
       default:
         throw new Error(`Unsupported expression: ${JSON.stringify(node)}`);
     }
@@ -402,6 +522,7 @@ function Compiler(ast) {
       case 'IncludeExpression': {
         if (node.isBuiltin) {
           includedBuiltIn.add(node.library);
+          console.log(includedBuiltIn);
         }
         break;
       }
@@ -524,35 +645,34 @@ function Compiler(ast) {
           expr.type === 'CallExpression' &&
           expr.callee.type === 'MemberExpression'
         ) {
-          if (
-            expr.callee.object.value === 'System' &&
-            expr.callee.property.value === 'Log' &&
-            includedBuiltIn.has('SystemLogging')
-          ) {
-            expr.arguments.forEach((arg) => compileExpression(arg));
-            if (expr.arguments.length > 0) {
-              writeUint8(bytes, opMap.PRINT);
-              writeUint32(bytes, expr.arguments.length);
+          const objectName = expr.callee.object.value;
+          const propertyName = expr.callee.property.value;
+          const handler = builtInHandlers[objectName]?.[propertyName];
+
+          if (handler) {
+            if (!includedBuiltIn.has(handler.requiredLib)) {
+              throw new Error(
+                `To use ${objectName}.${propertyName}(); You must include built in library: '${handler.requiredLib}'`
+              );
             }
-          } else if (
-            expr.callee.object.value === 'System' &&
-            expr.callee.property.value === 'Err' &&
-            includedBuiltIn.has('SystemLogging')
-          ) {
-            expr.arguments.forEach((arg) => compileExpression(arg));
-            if (!constants.includes('\x1b[38;2;244;71;71m'))
-              constants.push('\x1b[38;2;244;71;71m');
-            if (expr.arguments.length > 0) {
-              writeUint8(bytes, opMap.LOAD_CONST);
-              writeUint32(bytes, constants.indexOf('\x1b[38;2;244;71;71m'));
-              writeUint8(bytes, opMap.CONCAT);
-              writeUint8(bytes, opMap.PRINT);
-              writeUint32(bytes, expr.arguments.length);
+            handler.compile(expr, bytes, constants);
+          }
+        }
+        if (expr.type === 'MemberExpression') {
+          const objectName = expr.object.value;
+          const propertyName = expr.property.value;
+
+          const handler = builtInHandlers[objectName]?.[propertyName];
+          if (handler) {
+            if (!includedBuiltIn.has(handler.requiredLib)) {
+              throw new Error(
+                `To use ${objectName}.${propertyName}, you must include built-in library: '${handler.requiredLib}'`
+              );
             }
-          } else if (!includedBuiltIn.has('SystemLogging')) {
-            throw new Error(
-              `To use ${expr.callee.object.value}.${expr.callee.property.value}(); You must include built in library: 'SystemLogging'`
-            );
+            if (!constants.includes(handler.value))
+              constants.push(handler.value);
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(handler.value));
           }
         }
 

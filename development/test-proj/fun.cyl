@@ -4,4 +4,4 @@ fun Add(x, y) {
 	return x + y;
 }
 
-System.Log(Add(10, 10));
+System.Log(Add(2,3));

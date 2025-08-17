@@ -3,11 +3,13 @@ import { Parser } from './parser.js';
 import { Compiler } from './compiler.js';
 import * as fs from 'fs';
 
-const filename = 'code.cy';
+const filename = 'code.cyl';
 
 const code = fs.readFileSync(`../${filename}`, 'utf-8');
 const Lexed = Lexer(code, filename);
 const parsed = Parser(Lexed, code, filename);
+
+//console.dir(parsed, {depth: null})
 
 const cylinder = filename.split('.')[0] + '.cylinder';
 const compiled = Compiler(parsed);
@@ -19,4 +21,3 @@ console.log(
     .join(' ')
 );
 fs.writeFileSync(cylinder, compiled);
-//console.dir(parsed, {depth: null})
