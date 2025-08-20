@@ -2,6 +2,13 @@ import * as fs from 'fs';
 
 const file = fs.readFileSync('../compiler/code.cylinder');
 
+function prompt(question) {
+  fs.writeSync(1, question); 
+  const buffer = Buffer.alloc(1024);
+  const bytes = fs.readSync(0, buffer, 0, 1024, null); 
+  return buffer.toString("utf8", 0, bytes).trim();
+}
+
 function VM(buffer) {
   const includedBM = new Map();
 
@@ -22,7 +29,7 @@ function VM(buffer) {
 
   let offset = 0;
   function decompileConstants(buf) {
-    if (buf.readUInt32BE(offset) !== 0xbeefc0de)
+    if (buf.readUInt32BE(offset) !== 0xC7114D3F)
       throw new Error('Invalid Magic!');
     offset += 4;
 
@@ -114,6 +121,7 @@ function VM(buffer) {
       }
 
       const op = context.nextByte();
+			//console.log(op);
 
       switch (op) {
         case 0x01: {
@@ -258,12 +266,13 @@ function VM(buffer) {
             args.unshift(stack.pop());
           
           const func = stack.pop();
+					stack.push(func);
           if (func?.type !== 'function') 
             throw new Error('Not a function');
 
           const newContext = createContext(
             func.body,
-            args,  // parameters become locals
+            args,  
             func.globals
           );
 
@@ -278,7 +287,7 @@ function VM(buffer) {
             if (returnValue !== undefined) 
               stack.push(returnValue);
           } else {
-            context.pc = context.bytecode.length; // end execution
+            context.pc = context.bytecode.length; 
             if (returnValue !== undefined) 
               stack.push(returnValue);
           }
@@ -289,6 +298,55 @@ function VM(buffer) {
           stack.push(context.locals[arg]);
 					break;
 				}
+				case 0x17: {
+					const arg = context.nextArg();
+					context.pc = arg;
+					
+					break;
+				}
+				case 0x18: {
+					const canJump = stack.pop(); 
+					if (!canJump) {
+					  const arg = context.nextArg();
+					  context.pc = arg;
+					}
+					
+					break;
+				}
+				case 0x1A: {
+          const b = stack.pop();
+          const a = stack.pop();
+          stack.push(String(b) + String(a));
+          break;
+        }
+				case 0x1B: {
+          const type = context.nextByte(); 
+          const message = stack.length > 1 ? stack.splice(stack.length - 2, 1)[0] : null;
+          let input = prompt(message ?? null);
+        
+          switch (type) {
+            case 0xE0: 
+						  if (/[a-zA-Z]+/.test(input)) 
+							  throw new Error("Expected type Number, but got: String");
+              input = parseFloat(input);
+              if (Number.isNaN(input)) input = 0; 
+              break;
+        
+            case 0xE1: 
+						  if (/\d+/.test(input)) 
+							  throw new Error("Expected type String, but got: Number");
+              input = String(input);
+              break;
+        
+            case 0xE2: 
+              input = input.toLowerCase();
+              input = (input === "true" || input === "1" || input === "yes");
+              break;
+          }
+        
+          stack.push(input);
+          break;
+        }
         case 0xff: {
           halted = true;
 
@@ -327,6 +385,11 @@ const reference = {
   JMP: 0x17,
   JMP_IF_FALSE: 0x18,
   MODULUS: 0x19,
+	CONCAT_REV: 0x1A,
+	CONCAT_REV: 0x1A,
+	PROMPT: 0x1B,
+	
+	
   number: 0xe0,
   string: 0xe1,
   boolean: 0xe2,
@@ -337,250 +400,3 @@ const reference = {
 };
 
 VM(file);
-
-/*class VM {
-  constructor(buffer) {
-    this.stack = [];
-    this.globals = [];
-    this.callStack = [];
-    this.halted = false;
-  }
-
-  parseBinary(buf) {
-    let offset = 0;
-
-    if (buf.readUInt32BE(offset) !== 0xBEEFC0DE) throw new Error('Invalid magic');
-    offset += 4;
-
-    const version = buf.readUInt8(offset++);
-    if (version !== 0x01) throw new Error('Unsupported version');
-
-    const constCount = buf.readUInt8(offset++);
-    const constants = [];
-    for (let i = 0; i < constCount; i++) {
-      constants.push(buf.readDoubleBE(offset));
-      offset += 8;
-    }
-
-    const bcCount = buf.readUInt8(offset++);
-    const bytecodes = [];
-    for (let i = 0; i < bcCount; i++) {
-      const op = buf.readUInt8(offset++);
-      let arg = null;
-
-      // Here we decide if opcode has args
-      if (
-        op === 0x01 || // LOAD_CONST
-        op === 0x0F || // STORE_VAR
-        op === 0x10 || // LOAD_VAR
-        op === 0x12 || // DEF_FUNC
-        op === 0x13 || // CALL
-        op === 0x11 || // PRINT
-        op === 0x15 || // LOAD_GLOBAL
-        op === 0x16    // LOAD_PARAM
-      ) {
-        arg = buf.readUInt32BE(offset);
-        offset += 4;
-      }
-
-      bytecodes.push({ op, arg });
-    }
-
-    return { constants, bytecodes };
-  }
-
-  run() {
-    const opNames = {
-      0x01: 'LOAD_CONST',
-      0x02: 'ADD',
-      0x03: 'SUB',
-      0x04: 'MUL',
-      0x05: 'DIV',
-      0x06: 'GT',
-      0x07: 'LT',
-      0x08: 'GT_OE',
-      0x09: 'LT_OE',
-      0x0A: 'EQUAL',
-      0x0B: 'INEQUAL',
-      0x0C: 'STRICT_EQUAL',
-      0x0D: 'STRICT_INEQUAL',
-      0x0E: 'CONCAT',
-      0x0F: 'STORE_VAR',
-      0x10: 'LOAD_VAR',
-      0x11: 'PRINT',
-      0x12: 'DEF_FUNC',
-      0x13: 'CALL',
-      0x14: 'RETURN',
-      0x15: 'LOAD_GLOBAL',
-      0x16: 'LOAD_PARAM',
-      0xFF: 'HALT'
-    };
-
-    let context = {
-      bytecode: this.bytecode,
-      pc: 0,
-      locals: this.globals,
-      globals: this.globals
-    };
-
-    while (context && !this.halted) {
-      const bytecode = context.bytecode;
-      if (context.pc >= bytecode.length) {
-        if (this.callStack.length === 0) break;
-        context = this.callStack.pop();
-        continue;
-      }
-
-      const cmd = bytecode[context.pc++];
-      const opName = opNames[cmd.op];
-
-      switch (opName) {
-        case 'LOAD_CONST':
-          this.stack.push(this.constants[cmd.arg]);
-          break;
-        case 'ADD':
-          this.stack.push(this.stack.pop() + this.stack.pop());
-          break;
-        case 'SUB': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a - b);
-          break;
-        }
-        case 'MUL':
-          this.stack.push(this.stack.pop() * this.stack.pop());
-          break;
-        case 'DIV': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a / b);
-          break;
-        }
-        case 'GT': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a > b);
-          break;
-        }
-        case 'LT': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a < b);
-          break;
-        }
-        case 'GT_OE': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a >= b);
-          break;
-        }
-        case 'LT_OE': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a <= b);
-          break;
-        }
-        case 'EQUAL': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a == b);
-          break;
-        }
-        case 'INEQUAL': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a != b);
-          break;
-        }
-        case 'STRICT_EQUAL': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a === b);
-          break;
-        }
-        case 'STRICT_INEQUAL': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a !== b);
-          break;
-        }
-        case 'CONCAT': {
-          const b = this.stack.pop(), a = this.stack.pop();
-          this.stack.push(a + b);
-          break;
-        }
-        case 'STORE_VAR':
-          this.globals[cmd.arg] = this.stack.pop();
-          break;
-        case 'LOAD_VAR':
-          this.stack.push(this.globals[cmd.arg]);
-          break;
-        case 'PRINT': {
-          const count = cmd.arg;
-          const values = [];
-          for (let i = 0; i < count; i++) values.unshift(this.stack.pop());
-          console.log(...values);
-          break;
-        }
-        case 'DEF_FUNC': {
-          const [name, paramCount] = [cmd.arg, 1]; // placeholder handling
-          const body = [];
-
-          let j = context.pc;
-          let depth = 0;
-          while (j < context.bytecode.length) {
-            const next = context.bytecode[j];
-            if (opNames[next.op] === 'DEF_FUNC') depth++;
-            if (opNames[next.op] === 'RETURN' && depth === 0) {
-              body.push(next);
-              break;
-            }
-            if (opNames[next.op] === 'RETURN') depth--;
-            body.push(next);
-            j++;
-          }
-
-          const closureGlobals = context.globals;
-          context.locals[name] = {
-            type: 'function',
-            paramCount,
-            body,
-            globals: closureGlobals
-          };
-          context.pc = j + 1;
-          break;
-        }
-        case 'LOAD_PARAM':
-          this.stack.push(context.locals[cmd.arg]);
-          break;
-        case 'CALL': {
-          const args = [];
-          for (let i = 0; i < cmd.arg; i++) args.unshift(this.stack.pop());
-          const func = this.stack.pop();
-          if (!func || func.type !== 'function') throw new Error('Not a function');
-          const newContext = {
-            bytecode: func.body,
-            pc: 0,
-            locals: args,
-            globals: func.globals
-          };
-          this.callStack.push(context);
-          context = newContext;
-          break;
-        }
-        case 'RETURN': {
-          let returnValue;
-          if (this.stack.length > 0) returnValue = this.stack.pop();
-          if (this.callStack.length > 0) {
-            context = this.callStack.pop();
-            this.stack.push(returnValue);
-          } else {
-            context.pc = bytecode.length;
-          }
-          break;
-        }
-        case 'LOAD_GLOBAL':
-          this.stack.push(context.globals[cmd.arg]);
-          break;
-        case 'HALT':
-          this.halted = true;
-          break;
-        default:
-          throw new Error(`Unknown opcode: ${cmd.op}`);
-      }
-    }
-  }
-}
-
-const a = new VM(Buffer.from(file));
-a.run();*/

@@ -49,7 +49,8 @@ export function Lexer(code, filename = 'unknown.cy') {
     'undefined',
     'include',
   ];
-  const operations = ['+', '-', '*', '/', '<', '>', '%', '='];
+  // FIX: removed "=" here
+  const operations = ['+', '-', '*', '/', '<', '>', '%'];
   const symbols = [
     '_',
     ';',
@@ -260,27 +261,30 @@ export function Lexer(code, filename = 'unknown.cy') {
         });
         advance();
       }
+    // FIXED PART: handle "=" and "=="
     } else if (char === '=' || char === '!') {
-      if (nextChar(1) === '=' && nextChar(2) === '=') {
-        tokens.push({
-          type: TokenTypes.Operation,
-          value: char + '==',
-          line: tokenLine,
-          column: tokenColumn,
-        });
-        advance(3);
-      } else if (nextChar(1) === '=') {
-        tokens.push({
-          type: TokenTypes.Operation,
-          value: char + '=',
-          line: tokenLine,
-          column: tokenColumn,
-        });
-        advance(2);
+      if (nextChar(1) === '=') {
+				if (nextChar(2) === '=') {
+					tokens.push({
+            type: TokenTypes.Operation,
+            value: char + '==', // "==" or "!="
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(3);
+				} else {
+					tokens.push({
+            type: TokenTypes.Operation,
+            value: char + '=', // "==" or "!="
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(2);
+				}
       } else {
         tokens.push({
           type: TokenTypes.Operation,
-          value: char,
+          value: char, // "=" or "!"
           line: tokenLine,
           column: tokenColumn,
         });

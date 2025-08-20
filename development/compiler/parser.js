@@ -10,7 +10,7 @@ function ParserError(file, message, line, column, sourceLines) {
       line,
       column,
       sourceLines,
-      'one_dark'
+      'dark+'
     ).toString()
   );
   process.exit(1);
@@ -793,6 +793,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         code.split(/\r?\n/)
       );
     }
+		console.log(test)
 
     if (tokens[current]?.value !== ')') {
       const errorLine = line;

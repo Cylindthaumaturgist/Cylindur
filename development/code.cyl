@@ -1,8 +1,4 @@
 include#<SystemLogging>;
-include#<Mathematics>;
 
-const x = Math.Pow2(10);
-fun Add(x,y) {
-	return x + y;
-}
-System.Log(Add(x, 10));
+const msg = System.Prompt("What is your name? ", "Number");
+System.Log(msg);

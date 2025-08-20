@@ -1,3 +1,20 @@
+import CaretError from './helpers/CaretError.js';
+
+function CompileError(file, message, line, column, sourceLines) {
+  console.log(
+    new CaretError(
+      'CompileError',
+      file,
+      message,
+      line,
+      column,
+      sourceLines,
+      'dark+'
+    ).toString()
+  );
+  process.exit(1);
+}
+
 function TypeCheck(ast, builtInFunctions = {}) {
   const variables = new Map();
   const aliases = new Map();
@@ -55,7 +72,6 @@ function TypeCheck(ast, builtInFunctions = {}) {
         error(`Unknown type: ${node.value}`);
       }
       case 'BinaryExpression': {
-        console.log(node.left);
         const leftType = getTypeFromNode(node.left);
         const rightType = getTypeFromNode(node.right);
 
@@ -201,7 +217,7 @@ function TypeCheck(ast, builtInFunctions = {}) {
   }
 }
 
-function Compiler(ast) {
+function Compiler(ast, fileName, code) {
   const builtInFunctionsType = {
     System: {
       Log: {
@@ -255,7 +271,9 @@ function Compiler(ast) {
     JMP: 0x17,
     JMP_IF_FALSE: 0x18,
     MODULUS: 0x19,
-    
+    CONCAT_REV: 0x1A,
+		PROMPT: 0x1B,
+		
     number: 0xe0,
     string: 0xe1,
     boolean: 0xe2,
@@ -317,17 +335,100 @@ function Compiler(ast) {
         requiredLib: 'SystemLogging',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
-          if (!constants.includes('\x1b[38;2;244;71;71m'))
-            constants.push('\x1b[38;2;244;71;71m');
+					const ansi = '\x1b[1;38;2;244;71;71m[ERROR]:\x1b[22m ';
+					const reset = '\x1b[0m';
+					
+          if (!constants.includes(ansi))
+            constants.push(ansi);
+					if (!constants.includes(reset))
+            constants.push(reset);
           if (expr.arguments.length > 0) {
             writeUint8(bytes, opMap.LOAD_CONST);
-            writeUint32(bytes, constants.indexOf('\x1b[38;2;244;71;71m'));
-            writeUint8(bytes, opMap.CONCAT);
+            writeUint32(bytes, constants.indexOf(ansi));
+            writeUint8(bytes, opMap.CONCAT_REV);
+						
+						writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(reset));
+						writeUint8(bytes, opMap.CONCAT);
+						
             writeUint8(bytes, opMap.PRINT);
             writeUint32(bytes, expr.arguments.length);
           }
         },
       },
+			Warn: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+					const ansi = '\x1b[1;38;2;255;215;0m[WARN]:\x1b[22m ';
+					const reset = '\x1b[0m';
+					
+          if (!constants.includes(ansi))
+            constants.push(ansi);
+					if (!constants.includes(reset))
+            constants.push(reset);
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(ansi));
+            writeUint8(bytes, opMap.CONCAT_REV);
+						
+						writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(reset));
+						writeUint8(bytes, opMap.CONCAT);
+						
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+          }
+        },
+      },
+			Info: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+					const ansi = '\x1b[1;37m[INFO]:\x1b[22m ';
+					const reset = '\x1b[0m';
+					
+          if (!constants.includes(ansi))
+            constants.push(ansi);
+					if (!constants.includes(reset))
+            constants.push(reset);
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(ansi));
+            writeUint8(bytes, opMap.CONCAT_REV);
+						
+						writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(reset));
+						writeUint8(bytes, opMap.CONCAT);
+						
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+          }
+        },
+      },
+			Prompt: {
+				requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+					expr.arguments.forEach((arg) => compileExpression(arg));
+					let type = opMap.string;
+					switch (expr.arguments[1]?.value) {
+						case "Number": 
+							type = opMap.number;
+							break;
+						case "String": 
+							type = opMap.string;
+							break;
+						case "Boolean": 
+							type = opMap.boolean;
+							break;
+						default: 
+						  type = opMap.string;
+					}
+					
+					writeUint8(bytes, opMap.PROMPT); 
+					writeUint8(bytes, type);
+				},
+			},
     },
     Math: {
       PI: {
@@ -353,25 +454,32 @@ function Compiler(ast) {
       Pow2: {
         requiredLib: 'Mathematics',
         compile: (expr, bytes, constants) => {
-					declareVar(`${expr.callee.object.value}_${expr.callee.property.value}`);
-          if (expr.arguments.length > 0) {
-            const idx = getVarIndex(`${expr.callee.object.value}_${expr.callee.property.value}`);
+          const name = "Math_Pow2";
+          const currentScope = scopes[scopes.length - 1];
+        
+          if (!currentScope.has(name)) {
+            declareVar(name);
+            const idx = getVarIndex(name);
+        
             const argc = 1;
             writeUint8(bytes, opMap.DEF_FUNC);
-            writeUint32(bytes, idx - 1);
+            writeUint32(bytes, idx + 1000);
             writeUint32(bytes, argc);
-            
-						writeUint8(bytes, opMap.LOAD_PARAM);
-						writeUint32(bytes, 0);
-						writeUint8(bytes, opMap.LOAD_PARAM);
-						writeUint32(bytes, 0);
-						writeUint8(bytes, opMap.MUL);
+        
+            writeUint8(bytes, opMap.LOAD_PARAM);
+            writeUint32(bytes, 0);
+            writeUint8(bytes, opMap.LOAD_PARAM);
+            writeUint32(bytes, 0);
+            writeUint8(bytes, opMap.MUL);
             writeUint8(bytes, opMap.RETURN);
-						
-            writeUint8(bytes, opMap.LOAD_VAR);
-						writeUint32(bytes, idx - 1);
           }
-        },
+        
+          if (expr.arguments.length > 0) {
+            const idx = getVarIndex(name);
+            writeUint8(bytes, opMap.LOAD_VAR);
+            writeUint32(bytes, idx + 1000);
+          }
+        }
       },
     },
   };
@@ -426,37 +534,39 @@ function Compiler(ast) {
         break;
       }
       case 'CallExpression': {
-  let funcIndex;
-
-  if (node.callee.type === 'Identifier') {
-    const name = node.callee.value;
-    const funcContext = functionStack[functionStack.length - 1];
-    const inParams = funcContext?.params.has(name);
-    const inScope = scopes[scopes.length - 1].has(name);
-
-    funcIndex = getVarIndex(name);
-    writeUint8(
-      bytes,
-      inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
-    );
-    writeUint32(bytes, funcIndex);
-  } else if (node.callee.type === 'MemberExpression') {
-    const objectName = node.callee.object.value;
-    const propName = node.callee.property.value;
-
-    funcIndex = builtInHandlers[objectName]?.[propName];
-    if (funcIndex === undefined) throw new Error(`Unknown function ${objectName}.${propName}`);
-		funcIndex?.compile(node, bytes, constants)
-  } else {
-    throw new Error(`Unsupported callee type: ${node.callee.type}`);
-  }
-
-  node.arguments.forEach((arg) => compileExpression(arg));
-
-  writeUint8(bytes, opMap.CALL);
-  writeUint32(bytes, node.arguments.length);
-  break;
-}
+        let funcIndex;
+      
+        if (node.callee.type === 'Identifier') {
+          const name = node.callee.value;
+          const funcContext = functionStack[functionStack.length - 1];
+          const inParams = funcContext?.params.has(name);
+          const inScope = scopes[scopes.length - 1].has(name);
+      
+          funcIndex = getVarIndex(name);
+					console.log(inScope)
+          writeUint8(
+            bytes,
+            inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
+          );
+          writeUint32(bytes, funcIndex);
+					node.arguments.forEach((arg) => compileExpression(arg));
+        writeUint8(bytes, opMap.CALL);
+        writeUint32(bytes, node.arguments.length);
+        } else if (node.callee.type === 'MemberExpression') {
+					//console.log(node)
+          const objectName = node.callee.object.value;
+          const propName = node.callee.property.value;
+      
+          funcIndex = builtInHandlers[objectName]?.[propName];
+          if (funcIndex === undefined) throw new Error(`Unknown function ${objectName}.${propName}`);
+				  funcIndex?.compile(node, bytes, constants);
+        } else {
+          throw new Error(`Unsupported callee type: ${node.callee.type}`);
+        }
+      
+        
+        break;
+      }
       case 'BinaryExpression': {
         const isConcat =
           node.operator === '+' &&
@@ -515,12 +625,12 @@ function Compiler(ast) {
       case 'IncludeExpression': {
         if (node.isBuiltin) {
           includedBuiltIn.add(node.library);
-          console.log(includedBuiltIn);
         }
         break;
       }
       case 'VariableDeclaration': {
         const isConst = node.kind === 'Constant';
+				//console.dir(node, {depth:null})
         node.declarations.forEach((decl) => {
           compileExpression(decl.init);
           const idx = declareVar(decl.id.value);
@@ -650,7 +760,29 @@ function Compiler(ast) {
             }
             handler.compile(expr, bytes, constants);
           }
-        }
+        } else if (expr.type === 'CallExpression') {
+					let funcIndex;
+      
+          if (expr.callee.type === 'Identifier') {
+            const name = expr.callee.value;
+            const funcContext = functionStack[functionStack.length - 1];
+            const inParams = funcContext?.params.has(name);
+            const inScope = scopes[scopes.length - 1].has(name);
+        
+            funcIndex = getVarIndex(name);
+					  console.log(inScope)
+            writeUint8(
+              bytes,
+              inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
+            );
+            writeUint32(bytes, funcIndex);
+          }
+        
+          expr.arguments.forEach((arg) => compileExpression(arg));
+        console.log("2")
+          writeUint8(bytes, opMap.CALL);
+          writeUint32(bytes, expr.arguments.length);
+				}
         if (expr.type === 'MemberExpression') {
           const objectName = expr.object.value;
           const propertyName = expr.property.value;
@@ -745,7 +877,7 @@ function Compiler(ast) {
 
   writeUint8(bytes, opMap.HALT);
 
-  const header = [0xbe, 0xef, 0xc0, 0xde, ver];
+  const header = [0xC7, 0x11, 0x4D, 0x3F, ver];
 
   const constantsBytes = []; // [opMap.CONST_LEN];
   writeUint32(constantsBytes, constants.length);
