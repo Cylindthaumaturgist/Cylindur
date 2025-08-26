@@ -1,0 +1,24 @@
+include#<SystemLogging>;
+
+fun sqrt(n) {
+  if (n < 0) {
+		return null;
+	}
+  if (n === 0) {
+		return 0;
+	}
+
+  var x = n;
+  var guess = n / 2;
+
+  var i = 0;
+	while (i < 20) {
+		i++;
+		System.Log(i);
+    guess = 0.5 * (guess + x / guess);
+  }
+
+  return guess;
+}
+
+System.Log(sqrt(10));

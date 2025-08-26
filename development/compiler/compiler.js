@@ -1,5 +1,10 @@
 import CaretError from './helpers/CaretError.js';
 
+String.prototype.capitalize = function () {
+  if (!this) return '';
+  return this[0].toUpperCase() + this.slice(1);
+};
+
 function CompileError(file, message, line, column, sourceLines) {
   console.log(
     new CaretError(
@@ -15,209 +20,7 @@ function CompileError(file, message, line, column, sourceLines) {
   process.exit(1);
 }
 
-function TypeCheck(ast, builtInFunctions = {}) {
-  const variables = new Map();
-  const aliases = new Map();
-
-  const functions = new Map(Object.entries(builtInFunctions));
-  const errors = [];
-  let currentFunction = null;
-
-  function error(msg) {
-    errors.push(msg);
-  }
-
-  function isControlKeyword(name) {
-    return [
-      'if',
-      'while',
-      'for',
-      'switch',
-      'return',
-      'break',
-      'continue',
-    ].includes(name);
-  }
-
-  function declareVar(node) {
-    node.declarations.forEach((decl) => {
-      variables.set(decl.id.value, {
-        type: decl.typeAnnotation?.annotation || 'Any',
-      });
-    });
-  }
-
-  function getTypeFromNode(node) {
-    switch (node.type) {
-      case 'NumberLiteral':
-        return 'Number';
-      case 'FloatLiteral':
-        return 'Float';
-      case 'BoolLiteral':
-        return 'Boolean';
-      case 'StringLiteral':
-        return 'String';
-      case 'Null':
-        return 'Null';
-      case 'Identifier': {
-        const v = variables.get(node.value);
-        if (v) {
-          return v.type;
-        }
-
-        if (aliases.has(node.value)) {
-          return aliases.get(node.value);
-        }
-
-        error(`Unknown type: ${node.value}`);
-      }
-      case 'BinaryExpression': {
-        const leftType = getTypeFromNode(node.left);
-        const rightType = getTypeFromNode(node.right);
-
-        if (
-          ['==', '===', '!=', '!==', '<', '>', '<=', '>='].includes(
-            node.operator
-          )
-        ) {
-          return 'Boolean';
-        }
-
-        if (leftType === 'Any' || rightType === 'Any') return 'Any';
-
-        if (leftType !== rightType) {
-          error(
-            `Type mismatch in binary expression: ${leftType} ${node.operator} ${rightType}`
-          );
-          return 'Any';
-        }
-
-        return leftType;
-      }
-
-      case 'MemberExpression':
-        return 'Any';
-      case 'ArrayExpression':
-        return 'Array';
-      case 'ObjectExpression':
-        return 'Object';
-      case 'AssignmentExpression':
-        return getTypeFromNode(node.right);
-      case 'TypeAnnotation':
-        return node.annotation;
-      default:
-        return 'Any';
-    }
-  }
-
-  function checkAssignment(node) {
-    const varName = node.left.value;
-    const variable = variables.get(varName);
-    if (!variable) {
-      error(`Variable ${varName} not declared`);
-      return;
-    }
-    const assignedType = getTypeFromNode(node.right);
-    if (assignedType !== variable.type && variable.type !== 'Any') {
-      error(
-        `Type mismatch on assignment to '${varName}': expected '${variable.type}', got '${assignedType}'`
-      );
-    }
-  }
-
-  function declareAlias(node) {
-    aliases.set(node.id.value, {
-      value: node.typeValue?.value ?? null,
-    });
-
-    ast.body.splice(ast.body.indexOf(node), 1);
-  }
-
-  function checkStatement(stmt) {
-    switch (stmt.type) {
-      case 'AliasDeclaration':
-        declareAlias(stmt);
-        break;
-      case 'VariableDeclaration':
-        declareVar(stmt);
-        break;
-      case 'AssignmentExpression':
-        checkAssignment(stmt);
-        break;
-      case 'FunctionDeclaration':
-      case 'FunctionExpression':
-        const fnId = stmt.id?.value || '<anonymous>';
-        functions.set(fnId, {
-          params: stmt.params || [],
-          returnType: stmt.returnType || 'Any',
-        });
-
-        const oldFunction = currentFunction;
-        currentFunction = functions.get(fnId);
-
-        const oldVariables = new Map(variables);
-        for (const param of stmt.params) {
-          variables.set(param.name, { type: param.type || 'Any', value: null });
-        }
-        for (const s of stmt.body) {
-          checkStatement(s);
-        }
-        variables.clear();
-        for (const [k, v] of oldVariables) variables.set(k, v);
-        currentFunction = oldFunction;
-        break;
-      case 'ReturnStatement':
-        if (!currentFunction) {
-          error('Return statement outside of function');
-          break;
-        }
-        const retType = getTypeFromNode(stmt.argument);
-        if (
-          retType !== currentFunction.returnType &&
-          currentFunction.returnType !== 'Any'
-        ) {
-          error(
-            `Return type mismatch: expected '${currentFunction.returnType}', got '${retType}'`
-          );
-        }
-        break;
-      case 'IfStatement':
-        checkStatement(stmt.test);
-        for (const s of stmt.consequent.body) checkStatement(s);
-        if (stmt.alternate) {
-          for (const s of stmt.alternate.body) checkStatement(s);
-        }
-        break;
-      case 'ForStatement':
-        if (stmt.init) checkStatement(stmt.init);
-        if (stmt.test) checkStatement(stmt.test);
-        if (stmt.update) checkStatement(stmt.update);
-        for (const s of stmt.body.body) checkStatement(s);
-        break;
-      case 'WhileStatement':
-        checkStatement(stmt.test);
-        for (const s of stmt.body.body) checkStatement(s);
-        break;
-      case 'ExpressionStatement':
-        getTypeFromNode(stmt.expression);
-        break;
-      case 'IncludeExpression':
-        break;
-      default:
-        break;
-    }
-  }
-
-  for (const stmt of ast.body) {
-    checkStatement(stmt);
-  }
-
-  if (errors.length) {
-    throw new Error(errors.join('\n'));
-  }
-}
-
-function Compiler(ast, fileName, code) {
+/*
   const builtInFunctionsType = {
     System: {
       Log: {
@@ -233,9 +36,10 @@ function Compiler(ast, fileName, code) {
     console.error(e.message);
     process.exit(1);
   }
+*/
 
-  const builtInIncludes = new Set(['Mathematics']);
-
+function Compiler(ast, fileName, code) {
+  const builtInIncludes = new Set(['SystemLogging', 'Mathematics', 'Chrono']);
   const bytes = [];
   const constants = [];
   let variableIndex = 0;
@@ -271,15 +75,29 @@ function Compiler(ast, fileName, code) {
     JMP: 0x17,
     JMP_IF_FALSE: 0x18,
     MODULUS: 0x19,
-    CONCAT_REV: 0x1A,
-		PROMPT: 0x1B,
-		
-    number: 0xe0,
-    string: 0xe1,
-    boolean: 0xe2,
-    array: 0xe3,
-    object: 0xe4,
-    null: 0xe5,
+    CONCAT_REV: 0x1a,
+    NOT: 0x1b,
+		STORE_PARAM: 0x1c,
+    // AND
+    // OR
+    // XOR
+    // POW
+    // TYPE_CHECK
+
+    // SPECIAL CASES
+    PROMPT: 0x31,
+    TIME_NOW: 0x32,
+
+    // TYPES
+    number: 0xe1,
+    string: 0xe2,
+    boolean: 0xe3,
+    array: 0xe4,
+    object: 0xe5,
+    null: 0xe6,
+    any: 0xe7,
+
+    LOAD_NULL: 0xfe,
     HALT: 0xff,
   };
 
@@ -307,6 +125,7 @@ function Compiler(ast, fileName, code) {
   }
 
   function getVarIndex(name) {
+		console.log(scopes)
     for (let i = scopes.length - 1; i >= 0; i--) {
       if (scopes[i].has(name)) return scopes[i].get(name);
     }
@@ -315,8 +134,44 @@ function Compiler(ast, fileName, code) {
 
   function declareVar(name) {
     const currentScope = scopes[scopes.length - 1];
+		console.log("scope:",currentScope)
     if (!currentScope.has(name)) currentScope.set(name, variableIndex++);
-    return currentScope.get(name) - 1;
+    return currentScope.get(name);
+  }
+
+  function isInsideFunction(root, target) {
+    let result = [false, 0];
+
+    function walk(node, depth) {
+      if (!node || typeof node !== 'object') return;
+
+      if (node === target) {
+        if (depth > 0) result = [true, 9 * depth];
+        return;
+      }
+
+      let newDepth = depth;
+      if (
+        node.type === 'FunctionDeclaration' ||
+        node.type === 'FunctionExpression' ||
+        node.type === 'ArrowFunctionExpression'
+      ) {
+        newDepth++;
+      }
+
+      for (const key in node) {
+        const child = node[key];
+        if (Array.isArray(child)) {
+          for (const c of child) walk(c, newDepth);
+        } else if (child && typeof child === 'object') {
+          walk(child, newDepth);
+        }
+        if (result[0]) return; // stop if found inside func
+      }
+    }
+
+    walk(root, 0);
+    return result;
   }
 
   const builtInHandlers = {
@@ -331,104 +186,184 @@ function Compiler(ast, fileName, code) {
           }
         },
       },
+      LogHalt: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+            writeUint8(bytes, opMap.HALT);
+          }
+        },
+      },
       Err: {
         requiredLib: 'SystemLogging',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
-					const ansi = '\x1b[1;38;2;244;71;71m[ERROR]:\x1b[22m ';
-					const reset = '\x1b[0m';
-					
-          if (!constants.includes(ansi))
-            constants.push(ansi);
-					if (!constants.includes(reset))
-            constants.push(reset);
+          const ansi = '\x1b[1;38;2;244;71;71m[ERROR]:\x1b[22m ';
+          const reset = '\x1b[0m';
+
+          if (!constants.includes(ansi)) constants.push(ansi);
+          if (!constants.includes(reset)) constants.push(reset);
           if (expr.arguments.length > 0) {
             writeUint8(bytes, opMap.LOAD_CONST);
             writeUint32(bytes, constants.indexOf(ansi));
             writeUint8(bytes, opMap.CONCAT_REV);
-						
-						writeUint8(bytes, opMap.LOAD_CONST);
+
+            writeUint8(bytes, opMap.LOAD_CONST);
             writeUint32(bytes, constants.indexOf(reset));
-						writeUint8(bytes, opMap.CONCAT);
-						
+            writeUint8(bytes, opMap.CONCAT);
+
             writeUint8(bytes, opMap.PRINT);
             writeUint32(bytes, expr.arguments.length);
           }
         },
       },
-			Warn: {
+      Err: {
         requiredLib: 'SystemLogging',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
-					const ansi = '\x1b[1;38;2;255;215;0m[WARN]:\x1b[22m ';
-					const reset = '\x1b[0m';
-					
-          if (!constants.includes(ansi))
-            constants.push(ansi);
-					if (!constants.includes(reset))
-            constants.push(reset);
+          const ansi = '\x1b[1;38;2;244;71;71m[ERROR]:\x1b[22m ';
+          const reset = '\x1b[0m';
+
+          if (!constants.includes(ansi)) constants.push(ansi);
+          if (!constants.includes(reset)) constants.push(reset);
           if (expr.arguments.length > 0) {
             writeUint8(bytes, opMap.LOAD_CONST);
             writeUint32(bytes, constants.indexOf(ansi));
             writeUint8(bytes, opMap.CONCAT_REV);
-						
-						writeUint8(bytes, opMap.LOAD_CONST);
+
+            writeUint8(bytes, opMap.LOAD_CONST);
             writeUint32(bytes, constants.indexOf(reset));
-						writeUint8(bytes, opMap.CONCAT);
-						
+            writeUint8(bytes, opMap.CONCAT);
+
             writeUint8(bytes, opMap.PRINT);
             writeUint32(bytes, expr.arguments.length);
+            writeUint8(bytes, opMap.HALT);
           }
         },
       },
-			Info: {
+      Warn: {
         requiredLib: 'SystemLogging',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
-					const ansi = '\x1b[1;37m[INFO]:\x1b[22m ';
-					const reset = '\x1b[0m';
-					
-          if (!constants.includes(ansi))
-            constants.push(ansi);
-					if (!constants.includes(reset))
-            constants.push(reset);
+          const ansi = '\x1b[1;38;2;255;215;0m[WARN]:\x1b[22m ';
+          const reset = '\x1b[0m';
+
+          if (!constants.includes(ansi)) constants.push(ansi);
+          if (!constants.includes(reset)) constants.push(reset);
           if (expr.arguments.length > 0) {
             writeUint8(bytes, opMap.LOAD_CONST);
             writeUint32(bytes, constants.indexOf(ansi));
             writeUint8(bytes, opMap.CONCAT_REV);
-						
-						writeUint8(bytes, opMap.LOAD_CONST);
+
+            writeUint8(bytes, opMap.LOAD_CONST);
             writeUint32(bytes, constants.indexOf(reset));
-						writeUint8(bytes, opMap.CONCAT);
-						
+            writeUint8(bytes, opMap.CONCAT);
+
             writeUint8(bytes, opMap.PRINT);
             writeUint32(bytes, expr.arguments.length);
           }
         },
       },
-			Prompt: {
-				requiredLib: 'SystemLogging',
+      Warn: {
+        requiredLib: 'SystemLogging',
         compile: (expr, bytes, constants) => {
-					expr.arguments.forEach((arg) => compileExpression(arg));
-					let type = opMap.string;
-					switch (expr.arguments[1]?.value) {
-						case "Number": 
-							type = opMap.number;
-							break;
-						case "String": 
-							type = opMap.string;
-							break;
-						case "Boolean": 
-							type = opMap.boolean;
-							break;
-						default: 
-						  type = opMap.string;
-					}
-					
-					writeUint8(bytes, opMap.PROMPT); 
-					writeUint8(bytes, type);
-				},
-			},
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          const ansi = '\x1b[1;38;2;255;215;0m[WARN]:\x1b[22m ';
+          const reset = '\x1b[0m';
+
+          if (!constants.includes(ansi)) constants.push(ansi);
+          if (!constants.includes(reset)) constants.push(reset);
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(ansi));
+            writeUint8(bytes, opMap.CONCAT_REV);
+
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(reset));
+            writeUint8(bytes, opMap.CONCAT);
+
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+            writeUint8(bytes, opMap.HALT);
+          }
+        },
+      },
+      Info: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          const ansi = '\x1b[1;37m[INFO]:\x1b[22m ';
+          const reset = '\x1b[0m';
+
+          if (!constants.includes(ansi)) constants.push(ansi);
+          if (!constants.includes(reset)) constants.push(reset);
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(ansi));
+            writeUint8(bytes, opMap.CONCAT_REV);
+
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(reset));
+            writeUint8(bytes, opMap.CONCAT);
+
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+          }
+        },
+      },
+      Info: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          const ansi = '\x1b[1;37m[INFO]:\x1b[22m ';
+          const reset = '\x1b[0m';
+
+          if (!constants.includes(ansi)) constants.push(ansi);
+          if (!constants.includes(reset)) constants.push(reset);
+          if (expr.arguments.length > 0) {
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(ansi));
+            writeUint8(bytes, opMap.CONCAT_REV);
+
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(reset));
+            writeUint8(bytes, opMap.CONCAT);
+
+            writeUint8(bytes, opMap.PRINT);
+            writeUint32(bytes, expr.arguments.length);
+            writeUint8(bytes, opMap.HALT);
+          }
+        },
+      },
+      Prompt: {
+        requiredLib: 'SystemLogging',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          let type = opMap.string;
+          switch (expr.arguments[1]?.value) {
+            case 'Number':
+              type = opMap.number;
+              break;
+            case 'String':
+              type = opMap.string;
+              break;
+            case 'Boolean':
+              type = opMap.boolean;
+              break;
+            case 'Any':
+              type = opMap.any;
+              break;
+            default:
+              type = opMap.any;
+          }
+
+          writeUint8(bytes, opMap.PROMPT);
+          writeUint8(bytes, type);
+        },
+      },
     },
     Math: {
       PI: {
@@ -441,31 +376,31 @@ function Compiler(ast, fileName, code) {
         type: 'variable',
         value: 2.718281828459045,
       },
-			PI32: {
-				requiredLib: 'Mathematics',
+      PI32: {
+        requiredLib: 'Mathematics',
         type: 'variable',
         value: 3.1415926,
-			},
-			E32: {
-				requiredLib: 'Mathematics',
+      },
+      E32: {
+        requiredLib: 'Mathematics',
         type: 'variable',
         value: 2.7182818,
-			},
+      },
       Pow2: {
         requiredLib: 'Mathematics',
         compile: (expr, bytes, constants) => {
-          const name = "Math_Pow2";
+          const name = 'Math_Pow2';
           const currentScope = scopes[scopes.length - 1];
-        
+
           if (!currentScope.has(name)) {
             declareVar(name);
             const idx = getVarIndex(name);
-        
+
             const argc = 1;
             writeUint8(bytes, opMap.DEF_FUNC);
-            writeUint32(bytes, idx + 1000);
+            writeUint32(bytes, idx);
             writeUint32(bytes, argc);
-        
+
             writeUint8(bytes, opMap.LOAD_PARAM);
             writeUint32(bytes, 0);
             writeUint8(bytes, opMap.LOAD_PARAM);
@@ -473,16 +408,46 @@ function Compiler(ast, fileName, code) {
             writeUint8(bytes, opMap.MUL);
             writeUint8(bytes, opMap.RETURN);
           }
-        
-          if (expr.arguments.length > 0) {
-            const idx = getVarIndex(name);
-            writeUint8(bytes, opMap.LOAD_VAR);
-            writeUint32(bytes, idx + 1000);
-          }
-        }
+
+          // Load the function
+          const idx = getVarIndex(name);
+          writeUint8(bytes, opMap.LOAD_VAR);
+          writeUint32(bytes, idx);
+
+          // Compile the arguments
+          expr.arguments.forEach((arg) => compileExpression(arg));
+
+          // Call the function with the correct number of arguments
+          writeUint8(bytes, opMap.CALL);
+          writeUint32(bytes, expr.arguments.length);
+        },
+      },
+    },
+    Time: {
+      Now: {
+        requiredLib: 'Chrono',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          writeUint8(bytes, opMap.TIME_NOW);
+        },
       },
     },
   };
+
+  function isBuiltInMemberFunc(propertyName) {
+    return [
+      'Log',
+      'Err',
+      'Warn',
+      'Info',
+      'LogHalt',
+      'ErrHalt',
+      'WarnHalt',
+      'InfoHalt',
+      'Now',
+      'Prompt',
+    ].includes(propertyName);
+  }
 
   const functionStack = [];
 
@@ -522,49 +487,59 @@ function Compiler(ast, fileName, code) {
         break;
       }
       case 'Identifier': {
-        const funcContext = functionStack[functionStack.length - 1];
-        if (funcContext?.params.has(node.value)) {
-          writeUint8(bytes, opMap.LOAD_PARAM);
-          writeUint32(bytes, funcContext.params.get(node.value));
+        if (Object.keys(builtInHandlers).includes(node.value)) {
+          const msg = `const ${node.value} = [native code];`;
+          if (!constants.includes(msg)) constants.push(msg);
+
+          writeUint8(bytes, opMap.LOAD_CONST);
+          writeUint32(bytes, constants.indexOf(msg));
         } else {
-          const idx = getVarIndex(node.value);
-          writeUint8(bytes, opMap.LOAD_VAR);
-          writeUint32(bytes, idx - 1);
+          const funcContext = functionStack[functionStack.length - 1];
+          if (funcContext?.params.has(node.value)) {
+            writeUint8(bytes, opMap.LOAD_PARAM);
+            writeUint32(bytes, funcContext.params.get(node.value));
+          } else {
+            const idx = getVarIndex(node.value);
+            writeUint8(bytes, opMap.LOAD_VAR);
+            writeUint32(bytes, idx);
+          }
         }
+        break;
+      }
+      case 'Null': {
+        writeUint8(bytes, opMap.LOAD_NULL);
         break;
       }
       case 'CallExpression': {
         let funcIndex;
-      
+
         if (node.callee.type === 'Identifier') {
           const name = node.callee.value;
           const funcContext = functionStack[functionStack.length - 1];
           const inParams = funcContext?.params.has(name);
           const inScope = scopes[scopes.length - 1].has(name);
-      
+
           funcIndex = getVarIndex(name);
-					console.log(inScope)
           writeUint8(
             bytes,
             inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
           );
           writeUint32(bytes, funcIndex);
-					node.arguments.forEach((arg) => compileExpression(arg));
-        writeUint8(bytes, opMap.CALL);
-        writeUint32(bytes, node.arguments.length);
+          node.arguments.forEach((arg) => compileExpression(arg));
+          writeUint8(bytes, opMap.CALL);
+          writeUint32(bytes, node.arguments.length);
         } else if (node.callee.type === 'MemberExpression') {
-					//console.log(node)
           const objectName = node.callee.object.value;
           const propName = node.callee.property.value;
-      
+
           funcIndex = builtInHandlers[objectName]?.[propName];
-          if (funcIndex === undefined) throw new Error(`Unknown function ${objectName}.${propName}`);
-				  funcIndex?.compile(node, bytes, constants);
+          if (funcIndex === undefined)
+            throw new Error(`Unknown function ${objectName}.${propName}`);
+          funcIndex?.compile(node, bytes, constants);
         } else {
           throw new Error(`Unsupported callee type: ${node.callee.type}`);
         }
-      
-        
+
         break;
       }
       case 'BinaryExpression': {
@@ -612,7 +587,80 @@ function Compiler(ast, fileName, code) {
           if (!constants.includes(handler.value)) constants.push(handler.value);
           writeUint8(bytes, opMap.LOAD_CONST);
           writeUint32(bytes, constants.indexOf(handler.value));
+        } else if (isBuiltInMemberFunc(propertyName)) {
+          const msg = `fun ${propertyName.capitalize()}() {\n\x20\x20[native code];\n}`;
+          if (!constants.includes(msg)) constants.push(msg);
+
+          writeUint8(bytes, opMap.LOAD_CONST);
+          writeUint32(bytes, constants.indexOf(msg));
         }
+        break;
+      }
+      case 'UnaryExpression': {
+        const { operator, argument, prefix } = node.value ?? node;
+        
+        if (argument.type !== 'Identifier') {
+          throw new Error('UnaryExpression argument must be an identifier');
+        }
+				
+				const funcContext = functionStack[functionStack.length - 1];
+				let isParam = funcContext?.params.has(argument.value);
+				let idx;
+				
+				if (isParam) {
+					idx = funcContext?.params.get(argument.value);
+				} else {
+					idx = getVarIndex(argument.value);
+				}
+
+        if (
+          (operator === '++' || operator === '--') &&
+          !constants.includes(1)
+        ) {
+          constants.push(1);
+        }
+        const oneIdx = constants.indexOf(1);
+
+        if (operator === '!') {
+          writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+          writeUint32(bytes, idx);
+          writeUint8(bytes, opMap.NOT);
+        } else if (operator === '++' || operator === '--') {
+          if (prefix) {
+            // Prefix: compute new value, store, push result
+            writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+            writeUint32(bytes, idx);
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, oneIdx);
+            writeUint8(bytes, operator === '++' ? opMap.ADD : opMap.SUB);
+
+            // Store updated value
+            writeUint8(bytes, isParam ? opMap.STORE_PARAM : opMap.STORE_VAR);
+            writeUint32(bytes, idx);
+
+            // Push result for expression
+            writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+            writeUint32(bytes, idx);
+          } else {
+            // Postfix: push old value first
+            writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+            writeUint32(bytes, idx);
+
+            // Compute new value
+            writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+            writeUint32(bytes, idx);
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, oneIdx);
+            writeUint8(bytes, operator === '++' ? opMap.ADD : opMap.SUB);
+
+            // Store updated value
+            writeUint8(bytes, isParam ? opMap.STORE_PARAM : opMap.STORE_VAR);
+            writeUint32(bytes, idx);
+          }
+        } else {
+          throw new Error(`Unsupported unary operator: ${operator}`);
+        }
+
         break;
       }
       default:
@@ -624,13 +672,15 @@ function Compiler(ast, fileName, code) {
     switch (node.type) {
       case 'IncludeExpression': {
         if (node.isBuiltin) {
+          if (!builtInIncludes.has(node.library))
+            throw new Error('Unknown built-in library: ' + node.library);
           includedBuiltIn.add(node.library);
         }
         break;
       }
       case 'VariableDeclaration': {
         const isConst = node.kind === 'Constant';
-				//console.dir(node, {depth:null})
+
         node.declarations.forEach((decl) => {
           compileExpression(decl.init);
           const idx = declareVar(decl.id.value);
@@ -649,9 +699,14 @@ function Compiler(ast, fileName, code) {
 
         const localScope = new Map();
         scopes.push(localScope);
+				
+				let oldVarIndex = variableIndex;
+				variableIndex = argc;
 
         const paramMap = new Map();
-        node.params.forEach((param, i) => paramMap.set(param.name, i));
+        node.params.forEach((param, i) => {
+					paramMap.set(param.name, i);
+			  });
         functionStack.push({ params: paramMap });
 
         let hasReturn = false;
@@ -663,6 +718,8 @@ function Compiler(ast, fileName, code) {
 
         functionStack.pop();
         scopes.pop();
+				
+				variableIndex = oldVarIndex;
         break;
       }
       case 'ReturnStatement': {
@@ -673,12 +730,21 @@ function Compiler(ast, fileName, code) {
       case 'AssignmentExpression': {
         if (node.left.type !== 'Identifier')
           throw new Error('Only simple assignments supported');
-        const idx = getVarIndex(node.left.value);
+        const funcContext = functionStack[functionStack.length - 1];
+				let isParam = funcContext?.params.has(node.left.value);
+				let idx;
+				
+				if (isParam) {
+					idx = funcContext?.params.get(node.left.value);
+				} else {
+					idx = getVarIndex(node.left.value);
+				}
+				
         if (constantVariableMap.get(idx))
           throw new Error(`Assignment to constant: ${node.left.value}`);
 
         if (['+=', '-=', '*=', '/='].includes(node.operator)) {
-          writeUint8(bytes, opMap.LOAD_VAR);
+          writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
           writeUint32(bytes, idx);
           compileExpression(node.right);
           const opMapOps = {
@@ -688,11 +754,11 @@ function Compiler(ast, fileName, code) {
             '/=': 'DIV',
           };
           writeUint8(bytes, opMap[opMapOps[node.operator]]);
-          writeUint8(bytes, opMap.STORE_VAR);
+          writeUint8(bytes, isParam ? opMap.STORE_PARAM : opMap.STORE_VAR);
           writeUint32(bytes, idx);
         } else if (node.operator === '=') {
           compileExpression(node.right);
-          writeUint8(bytes, opMap.STORE_VAR);
+          writeUint8(bytes, isParam ? opMap.STORE_PARAM : opMap.STORE_VAR);
           writeUint32(bytes, idx);
         } else {
           throw new Error(`Unsupported assignment operator: ${node.operator}`);
@@ -703,44 +769,31 @@ function Compiler(ast, fileName, code) {
         const expr = node.expression;
 
         if (expr.type === 'UnaryExpression') {
-          if (!constants.includes(1)) constants.push(1);
-          if (expr.operator === '++') {
-            compileExpression(expr.argument);
-            writeUint8(bytes, opMap.LOAD_CONST);
-            writeUint32(bytes, constants.indexOf(1));
-            writeUint8(bytes, opMap.ADD);
-
-            if (expr.argument.type === 'Identifier') {
-              const idx = getVarIndex(expr.argument.value);
-              writeUint8(bytes, opMap.STORE_VAR);
-              writeUint32(bytes, idx);
-            } else {
-              throw new Error(
-                'Unsupported argument type for postfix increment'
-              );
-            }
-
-            compileExpression(expr.argument);
-          } else if (expr.operator === '--') {
-            compileExpression(expr.argument);
-            writeUint8(bytes, opMap.LOAD_CONST);
-            writeUint32(bytes, constants.indexOf(1));
-            writeUint8(bytes, opMap.SUB);
-
-            if (expr.argument.type === 'Identifier') {
-              const idx = getVarIndex(expr.argument.value);
-              writeUint8(bytes, opMap.STORE_VAR);
-              writeUint32(bytes, idx);
-            } else {
-              throw new Error(
-                'Unsupported argument type for postfix decrement'
-              );
-            }
-
-            compileExpression(expr.argument);
+          const funcContext = functionStack[functionStack.length - 1];
+          const isParam = funcContext?.params.has(expr.argument.value);
+        
+          let idx;
+          if (isParam) {
+            idx = funcContext.params.get(expr.argument.value);
           } else {
-            throw new Error(`Unsupported update operator: ${expr.operator}`);
+            idx = getVarIndex(expr.argument.value);
           }
+        
+          if (!constants.includes(1)) constants.push(1);
+        
+          // Postfix (++ / --)
+          writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+          writeUint32(bytes, idx);
+        
+          writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+          writeUint32(bytes, idx);
+          writeUint8(bytes, opMap.LOAD_CONST);
+          writeUint32(bytes, constants.indexOf(1));
+          writeUint8(bytes, expr.operator === '++' ? opMap.ADD : opMap.SUB);
+        
+          writeUint8(bytes, isParam ? opMap.STORE_PARAM : opMap.STORE_VAR);
+          writeUint32(bytes, idx);
+        
           break;
         }
 
@@ -751,7 +804,6 @@ function Compiler(ast, fileName, code) {
           const objectName = expr.callee.object.value;
           const propertyName = expr.callee.property.value;
           const handler = builtInHandlers[objectName]?.[propertyName];
-
           if (handler) {
             if (!includedBuiltIn.has(handler.requiredLib)) {
               throw new Error(
@@ -761,32 +813,27 @@ function Compiler(ast, fileName, code) {
             handler.compile(expr, bytes, constants);
           }
         } else if (expr.type === 'CallExpression') {
-					let funcIndex;
-      
+          let funcIndex;
           if (expr.callee.type === 'Identifier') {
             const name = expr.callee.value;
             const funcContext = functionStack[functionStack.length - 1];
             const inParams = funcContext?.params.has(name);
             const inScope = scopes[scopes.length - 1].has(name);
-        
             funcIndex = getVarIndex(name);
-					  console.log(inScope)
             writeUint8(
               bytes,
               inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
             );
             writeUint32(bytes, funcIndex);
           }
-        
           expr.arguments.forEach((arg) => compileExpression(arg));
-        console.log("2")
           writeUint8(bytes, opMap.CALL);
           writeUint32(bytes, expr.arguments.length);
-				}
+        }
+
         if (expr.type === 'MemberExpression') {
           const objectName = expr.object.value;
           const propertyName = expr.property.value;
-
           const handler = builtInHandlers[objectName]?.[propertyName];
           if (handler) {
             if (!includedBuiltIn.has(handler.requiredLib)) {
@@ -842,7 +889,9 @@ function Compiler(ast, fileName, code) {
         break;
       }
       case 'WhileStatement': {
+        const scope = scopes[scopes.length - 1];
         const loopStart = bytes.length;
+        const isInsideFunc = isInsideFunction(ast, node);
 
         compileExpression(node.test);
 
@@ -855,11 +904,17 @@ function Compiler(ast, fileName, code) {
         } else {
           compileNode(node.body);
         }
+				console.log(isInsideFunc[1])
 
         writeUint8(bytes, opMap.JMP);
-        writeUint32(bytes, loopStart);
+        writeUint32(
+          bytes,
+          isInsideFunc[0] ? loopStart - isInsideFunc[1] : loopStart
+        );
 
-        const offsetAfterBody = bytes.length;
+        const offsetAfterBody = isInsideFunc[0]
+          ? bytes.length - isInsideFunc[1]
+          : bytes.length;
 
         bytes[jmpIfFalsePos + 1] = (offsetAfterBody >> 24) & 0xff;
         bytes[jmpIfFalsePos + 2] = (offsetAfterBody >> 16) & 0xff;
@@ -877,7 +932,7 @@ function Compiler(ast, fileName, code) {
 
   writeUint8(bytes, opMap.HALT);
 
-  const header = [0xC7, 0x11, 0x4D, 0x3F, ver];
+  const header = [0xc7, 0x11, 0x4d, 0x3f, ver];
 
   const constantsBytes = []; // [opMap.CONST_LEN];
   writeUint32(constantsBytes, constants.length);

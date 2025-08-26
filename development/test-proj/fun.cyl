@@ -5,3 +5,12 @@ fun Add(x, y) {
 }
 
 System.Log(Add(2,3));
+
+fun Pow(n: Number, c: Number) {
+  if (c === 0) {
+    return 1;
+  }
+  return n * Pow(n, c - 1);
+}
+
+System.Log(Pow(2, 3)); // 8

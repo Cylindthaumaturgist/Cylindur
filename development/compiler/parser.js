@@ -59,9 +59,24 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     const startLine = token.line;
     const startColumn = token.column;
 
+    let isNegative = false;
+    if (
+      tokens[current - 1] &&
+      tokens[current - 1]?.type === TokenTypes.Operator &&
+      tokens[current - 1]?.value === '-'
+    ) {
+      isNegative = true;
+      // optionally consume the minus if it hasn't been consumed yet
+    }
+
     if (token.type === TokenTypes.Number) {
       consume();
-      let num = token.value.split('_').join('');
+
+      let raw = token.value.split('_').join('');
+      let num = parseFloat(raw);
+
+      if (isNegative) num = -num;
+
       return createNode('NumberLiteral', num, {
         startLine,
         startColumn,
@@ -134,15 +149,45 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
       });
     }
 
+    if (
+      (token.type === TokenTypes.Symbol ||
+        token.type === TokenTypes.Operation) &&
+      tokens[current + 1]?.type === TokenTypes.Identifier
+    ) {
+      const operator = token.value; // e.g., "!", "++", "--"
+      consume(); // consume the operator symbol
+
+      const nextToken = tokens[current];
+      if (nextToken.type === TokenTypes.Identifier) {
+        consume(); // consume the identifier
+        return createNode(
+          'UnaryExpression',
+          {
+            operator: operator,
+            argument: createNode('Identifier', nextToken.value),
+            prefix: true, // <-- add this for prefix unary operators
+          },
+          {
+            startLine,
+            startColumn,
+          }
+        );
+      } else {
+        throw new Error(
+          `Expected identifier after unary operator '${operator}'`
+        );
+      }
+    }
+
     if (token.type === TokenTypes.Identifier) {
       let identifierNode = createNode('Identifier', token.value, {
         startLine,
         startColumn,
-				endLine: line,
+        endLine: line,
         endColumn: column,
       });
-			consume();
-			
+      consume();
+
       if (tokens[current]?.value === '++' || tokens[current]?.value === '--') {
         const opToken = tokens[current];
         consume();
@@ -235,7 +280,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           },
         };
       }
-			
+
       return identifierNode;
     }
 
@@ -502,14 +547,14 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
     if (init?.type === 'AssignmentExpression') init = init.right;
 
     if (tokens[current]?.value !== ';') {
-			console.log(init)
+      // console.log(init);
       const errorLine = init?.loc?.end?.line ?? line;
       const errorColumn = init?.loc?.end?.column ?? column;
       if (current > tokens.length - 1) {
         current = tokens.length - 1;
       }
       let additive = 0;
-			let subLine = 0;
+      let subLine = 0;
       if (
         tokens[current - 1]?.value === ':' &&
         tokens[current]?.type === 'identifier'
@@ -519,8 +564,8 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         additive = tokens[current].value.length + 1;
       } else if (init?.type === 'StringLiteral') {
         additive = init?.value.length + 1;
-      } 
-			
+      }
+
       ParserError(
         filename,
         `Expected ';' after variable declaration`,
@@ -793,8 +838,6 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
         code.split(/\r?\n/)
       );
     }
-		console.log(test)
-
     if (tokens[current]?.value !== ')') {
       const errorLine = line;
       const errorColumn = column;

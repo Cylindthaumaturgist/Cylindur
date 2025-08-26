@@ -24,25 +24,22 @@ function VM(buffer) {
       0x16, // LOAD_PARAM
       0x17, // JMP
       0x18, // JMP_IF_FALSE
-			0x1c,
     ].includes(op);
   }
 
   let offset = 0;
-
-  if (buffer.readUInt32BE(offset) !== 0xc7114d3f)
-    throw new Error('Invalid Magic!');
-  offset += 4;
-
-  const version = buffer.readUInt8(offset++);
-  if (version !== 0x01) throw new Error('Unsupported version');
-
   function decompileConstants(buf) {
+    if (buf.readUInt32BE(offset) !== 0xc7114d3f)
+      throw new Error('Invalid Magic!');
+    offset += 4;
+
+    const version = buf.readUInt8(offset++);
+    if (version !== 0x01) throw new Error('Unsupported version');
+
     const constCount = buf.readUInt32BE(offset);
     offset += 4;
 
-    const constants = new Array(256 * 16);
-    let cp = 0; // constants pointer
+    const constants = [];
     for (let i = 0; i < constCount; i++) {
       const constantType = buf.readUInt8(offset++);
 
@@ -50,7 +47,7 @@ function VM(buffer) {
         case 0xe1: {
           const number = buf.readDoubleBE(offset);
           offset += 8;
-          constants[cp++] = number;
+          constants.push(number);
           break;
         }
         case 0xe2: {
@@ -60,16 +57,16 @@ function VM(buffer) {
           const strValue = buf.toString('utf8', offset, offset + strLen);
           offset += strLen;
 
-          constants[cp++] = strValue;
+          constants.push(strValue);
           break;
         }
         case 0xe3: {
           const bool = buf.readUInt8(offset++) === 1;
-          constants[cp++] = bool;
+          constants.push(bool);
           break;
         }
         case 0xe6: {
-          constants[cp++] = null;
+          constants.push(null);
           break;
         }
         default:
@@ -80,7 +77,28 @@ function VM(buffer) {
     return constants;
   }
 
-  const stack = [];
+	const memAlloc = 500_000;
+  const stack = new Array(memAlloc);
+  let sp = 0;
+  
+  function push(val) {
+    if (sp >= stack.length) throw new Error('Stack overflow!');
+    stack[sp++] = val;
+  }
+  
+  function pop() {
+    if (sp <= 0) throw new Error('Stack underflow!');
+    const val = stack[--sp];
+    stack[sp] = undefined; // clean up reference
+    return val;
+  }
+  
+  function peek(offset = 0) {
+    const idx = sp - 1 - offset;
+    if (idx < 0) throw new Error('Stack underflow!');
+    return stack[idx];
+  }
+	
   const globals = [];
   const callStack = [];
   let halted = false;
@@ -123,111 +141,110 @@ function VM(buffer) {
         continue;
       }
 
-      //const op = context.nextByte();
-      const op = context.bytecode[context.pc++];
-      //console.log("0x" + op.toString(16) + " " + context.pc);
+      const op = context.nextByte();
+      //console.log(op);
 
       switch (op) {
         case 0x01: {
           const arg = context.nextArg();
-          stack.push(constants[arg]);
+
+          push(constants[arg]);
           break;
         }
         case 0x02: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a + b);
+          const b = pop();
+          const a = pop();
+          push(a + b);
           break;
         }
         case 0x03: {
-          //console.log("bytes", context.bytecode, "pc:", context.pc, "byte:", context.bytecode[context.pc])
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a - b);
+          const b = pop();
+          const a = pop();
+          push(a - b);
           break;
         }
         case 0x04: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a * b);
+          const b = pop();
+          const a = pop();
+          push(a * b);
           break;
         }
         case 0x05: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a / b);
+          const b = pop();
+          const a = pop();
+          push(a / b);
           break;
         }
         case 0x06: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a > b);
+          const b = pop();
+          const a = pop();
+          push(a > b);
           break;
         }
         case 0x07: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a < b);
+          const b = pop();
+          const a = pop();
+          push(a < b);
           break;
         }
         case 0x08: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a >= b);
+          const b = pop();
+          const a = pop();
+          push(a >= b);
           break;
         }
         case 0x09: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a <= b);
+          const b = pop();
+          const a = pop();
+          push(a <= b);
           break;
         }
         case 0x0a: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a == b);
+          const b = pop();
+          const a = pop();
+          push(a == b);
           break;
         }
         case 0x0b: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a != b);
+          const b = pop();
+          const a = pop();
+          push(a != b);
           break;
         }
         case 0x0c: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a === b);
+          const b = pop();
+          const a = pop();
+          push(a === b);
           break;
         }
         case 0x0d: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a !== b);
+          const b = pop();
+          const a = pop();
+          push(a !== b);
           break;
         }
         case 0x0e: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(String(a) + String(b));
+          const b = pop();
+          const a = pop();
+          push(String(a) + String(b));
           break;
         }
         case 0x0f: {
           const arg = context.nextArg();
-          context.locals[arg] = stack.pop(); // Changed from globals to context.locals
+          globals[arg] = pop();
+
           break;
         }
         case 0x10: {
           const arg = context.nextArg();
-					//console.log("context.locals[arg]:", context.locals[arg])
-          stack.push(context.locals[arg]);
-
+          push(globals[arg]);
           break;
         }
         case 0x11: {
           const arg = context.nextArg();
+
           const values = [];
-          for (let i = 0; i < arg; i++) values.unshift(stack.pop());
+          for (let i = 0; i < arg; i++) values.unshift(pop());
           console.log(...values);
           break;
         }
@@ -265,85 +282,66 @@ function VM(buffer) {
           break;
         }
         case 0x13: {
-					//console.log("stack:",stack)
           const argCount = context.nextArg();
           const args = [];
-          for (let i = 0; i < argCount; i++) args.unshift(stack.pop());
+          for (let i = 0; i < argCount; i++) args.unshift(pop());
 
-          // pop the function (don't just peek)
-					
-          const func = stack.pop();
-					//console.log(func)
+          const func = pop();
+          push(func);
           if (func?.type !== 'function') throw new Error('Not a function');
 
-          const newContext = createContext(func.body, [], func.globals);
-
-          // seed parameters into locals[0..paramCount-1]
-          for (let i = 0; i < func.paramCount; i++) {
-            newContext.locals[i] = args[i];
-          }
+          const newContext = createContext(func.body, args, func.globals);
 
           callStack.push(context);
           context = newContext;
-					//console.log("stack:",stack)
           break;
         }
         case 0x14: {
-          const returnValue = stack.pop();
+          const returnValue = pop();
           if (callStack.length > 0) {
             context = callStack.pop();
-            if (returnValue !== undefined) stack.push(returnValue);
+            if (returnValue !== undefined) push(returnValue);
           } else {
             context.pc = context.bytecode.length;
-            if (returnValue !== undefined) stack.push(returnValue);
+            if (returnValue !== undefined) push(returnValue);
           }
           break;
         }
         case 0x16: {
           const arg = context.nextArg();
-          stack.push(context.locals[arg]);
+          push(context.locals[arg]);
           break;
         }
         case 0x17: {
           const arg = context.nextArg();
           context.pc = arg;
-          //console.log("0x17\nBytecodes:", context.bytecode, "pc:", context.pc, "current:", context.bytecode[context.pc])
+
           break;
         }
         case 0x18: {
-          const canJump = stack.pop();
-          const arg = context.nextArg();
+          const canJump = pop();
           if (!canJump) {
+            const arg = context.nextArg();
             context.pc = arg;
           }
 
           break;
         }
         case 0x19: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a % b);
+          const b = pop();
+          const a = pop();
+          push(a % b);
           break;
         }
         case 0x1a: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(String(b) + String(a));
+          const b = pop();
+          const a = pop();
+          push(String(b) + String(a));
           break;
         }
-        case 0x1b: {
-          stack.push(!stack.pop());
-          break;
-        }
-				case 0x1c: {
-					const arg = context.nextArg();
-          context.locals[arg] = stack.pop();
-					break;
-				}
         case 0x31: {
           const type = context.nextByte();
-          const message =
-            stack.length > 1 ? stack.splice(stack.length - 2, 1)[0] : null;
+          const message = peek(1);
           let input = prompt(message ?? null);
 
           switch (type) {
@@ -364,22 +362,23 @@ function VM(buffer) {
               input = input.toLowerCase();
               input = input === 'true' || input === '1' || input === 'yes';
               break;
-
-            case 0xe7:
-              break;
+							
+						case 0xe7:
+							
+							break;
           }
 
-          stack.push(input);
+          push(input);
           break;
         }
         case 0x32: {
-          stack.push(Date.now());
+          push(Date.now());
           break;
         }
-        case 0xfe: {
-          stack.push(null);
-          break;
-        }
+				case 0xfe: {
+					push(null);
+					break;
+				}
         case 0xff: {
           halted = true;
 
@@ -419,8 +418,6 @@ const opMap = {
   JMP_IF_FALSE: 0x18,
   MODULUS: 0x19,
   CONCAT_REV: 0x1a,
-  NOT: 0x1b,
-	STORE_PARAM: 0x1c,
 
   // SPECIAL CASES
   PROMPT: 0x31,
@@ -434,8 +431,8 @@ const opMap = {
   object: 0xe5,
   null: 0xe6,
 
-  LOAD_NULL: 0xfe,
-  HALT: 0xff,
+	LOAD_NULL: 0xFE,
+  HALT: 0xFF,
 };
 
 VM(file);

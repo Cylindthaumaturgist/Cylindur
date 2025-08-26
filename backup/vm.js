@@ -24,7 +24,6 @@ function VM(buffer) {
       0x16, // LOAD_PARAM
       0x17, // JMP
       0x18, // JMP_IF_FALSE
-			0x1c,
     ].includes(op);
   }
 
@@ -219,7 +218,7 @@ function VM(buffer) {
         }
         case 0x10: {
           const arg = context.nextArg();
-					//console.log("context.locals[arg]:", context.locals[arg])
+					console.log("context.locals[arg]:", context.locals[arg])
           stack.push(context.locals[arg]);
 
           break;
@@ -265,7 +264,7 @@ function VM(buffer) {
           break;
         }
         case 0x13: {
-					//console.log("stack:",stack)
+					console.log("stack:",stack)
           const argCount = context.nextArg();
           const args = [];
           for (let i = 0; i < argCount; i++) args.unshift(stack.pop());
@@ -285,11 +284,11 @@ function VM(buffer) {
 
           callStack.push(context);
           context = newContext;
-					//console.log("stack:",stack)
           break;
         }
         case 0x14: {
           const returnValue = stack.pop();
+					console.log({ returnValue })
           if (callStack.length > 0) {
             context = callStack.pop();
             if (returnValue !== undefined) stack.push(returnValue);
@@ -335,11 +334,6 @@ function VM(buffer) {
           stack.push(!stack.pop());
           break;
         }
-				case 0x1c: {
-					const arg = context.nextArg();
-          context.locals[arg] = stack.pop();
-					break;
-				}
         case 0x31: {
           const type = context.nextByte();
           const message =
@@ -420,7 +414,6 @@ const opMap = {
   MODULUS: 0x19,
   CONCAT_REV: 0x1a,
   NOT: 0x1b,
-	STORE_PARAM: 0x1c,
 
   // SPECIAL CASES
   PROMPT: 0x31,

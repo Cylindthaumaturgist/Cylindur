@@ -43,7 +43,7 @@ export default class CaretError extends Error {
   ) {
     const Scheme = ColorSchemes[colorScheme];
     const RED = '\x1b[38;2;244;71;71m';
-		
+
     if (!Scheme) {
       const YELLOW = '\x1b[33m';
       const RESET = '\x1b[0m';
@@ -228,9 +228,7 @@ export default class CaretError extends Error {
           continue;
         }
         if (tok.type === 'comment') {
-          coloredLine += tok.text.startsWith(GREY)
-            ? tok.text
-            : `${COMMENTS}${tok.text}${RESET}`;
+          coloredLine += `${COMMENTS}${tok.text}${RESET}`;
           continue;
         }
         const color = colorFor(tok.type);

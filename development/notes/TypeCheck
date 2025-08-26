@@ -1,0 +1,201 @@
+function TypeCheck(ast, builtInFunctions = {}) {
+  const variables = new Map();
+  const aliases = new Map();
+
+  const functions = new Map(Object.entries(builtInFunctions));
+  const errors = [];
+  let currentFunction = null;
+
+  function error(msg) {
+    errors.push(msg);
+  }
+
+  function isControlKeyword(name) {
+    return [
+      'if',
+      'while',
+      'for',
+      'switch',
+      'return',
+      'break',
+      'continue',
+    ].includes(name);
+  }
+
+  function declareVar(node) {
+    node.declarations.forEach((decl) => {
+      variables.set(decl.id.value, {
+        type: decl.typeAnnotation?.annotation || 'Any',
+      });
+    });
+  }
+
+  function getTypeFromNode(node) {
+    switch (node.type) {
+      case 'NumberLiteral':
+        return 'Number';
+      case 'FloatLiteral':
+        return 'Float';
+      case 'BoolLiteral':
+        return 'Boolean';
+      case 'StringLiteral':
+        return 'String';
+      case 'Null':
+        return 'Null';
+      case 'Identifier': {
+        const v = variables.get(node.value);
+        if (v) {
+          return v.type;
+        }
+
+        if (aliases.has(node.value)) {
+          return aliases.get(node.value);
+        }
+
+        error(`Unknown type: ${node.value}`);
+      }
+      case 'BinaryExpression': {
+        const leftType = getTypeFromNode(node.left);
+        const rightType = getTypeFromNode(node.right);
+
+        if (
+          ['==', '===', '!=', '!==', '<', '>', '<=', '>='].includes(
+            node.operator
+          )
+        ) {
+          return 'Boolean';
+        }
+
+        if (leftType === 'Any' || rightType === 'Any') return 'Any';
+
+        if (leftType !== rightType) {
+          error(
+            `Type mismatch in binary expression: ${leftType} ${node.operator} ${rightType}`
+          );
+          return 'Any';
+        }
+
+        return leftType;
+      }
+
+      case 'MemberExpression':
+        return 'Any';
+      case 'ArrayExpression':
+        return 'Array';
+      case 'ObjectExpression':
+        return 'Object';
+      case 'AssignmentExpression':
+        return getTypeFromNode(node.right);
+      case 'TypeAnnotation':
+        return node.annotation;
+      default:
+        return 'Any';
+    }
+  }
+
+  function checkAssignment(node) {
+    const varName = node.left.value;
+    const variable = variables.get(varName);
+    if (!variable) {
+      error(`Variable ${varName} not declared`);
+      return;
+    }
+    const assignedType = getTypeFromNode(node.right);
+    if (assignedType !== variable.type && variable.type !== 'Any') {
+      error(
+        `Type mismatch on assignment to '${varName}': expected '${variable.type}', got '${assignedType}'`
+      );
+    }
+  }
+
+  function declareAlias(node) {
+    aliases.set(node.id.value, {
+      value: node.typeValue?.value ?? null,
+    });
+
+    ast.body.splice(ast.body.indexOf(node), 1);
+  }
+
+  function checkStatement(stmt) {
+    switch (stmt.type) {
+      case 'AliasDeclaration':
+        declareAlias(stmt);
+        break;
+      case 'VariableDeclaration':
+        declareVar(stmt);
+        break;
+      case 'AssignmentExpression':
+        checkAssignment(stmt);
+        break;
+      case 'FunctionDeclaration':
+      case 'FunctionExpression':
+        const fnId = stmt.id?.value || '<anonymous>';
+        functions.set(fnId, {
+          params: stmt.params || [],
+          returnType: stmt.returnType || 'Any',
+        });
+
+        const oldFunction = currentFunction;
+        currentFunction = functions.get(fnId);
+
+        const oldVariables = new Map(variables);
+        for (const param of stmt.params) {
+          variables.set(param.name, { type: param.type || 'Any', value: null });
+        }
+        for (const s of stmt.body) {
+          checkStatement(s);
+        }
+        variables.clear();
+        for (const [k, v] of oldVariables) variables.set(k, v);
+        currentFunction = oldFunction;
+        break;
+      case 'ReturnStatement':
+        if (!currentFunction) {
+          error('Return statement outside of function');
+          break;
+        }
+        const retType = getTypeFromNode(stmt.argument);
+        if (
+          retType !== currentFunction.returnType &&
+          currentFunction.returnType !== 'Any'
+        ) {
+          error(
+            `Return type mismatch: expected '${currentFunction.returnType}', got '${retType}'`
+          );
+        }
+        break;
+      case 'IfStatement':
+        checkStatement(stmt.test);
+        for (const s of stmt.consequent.body) checkStatement(s);
+        if (stmt.alternate) {
+          for (const s of stmt.alternate.body) checkStatement(s);
+        }
+        break;
+      case 'ForStatement':
+        if (stmt.init) checkStatement(stmt.init);
+        if (stmt.test) checkStatement(stmt.test);
+        if (stmt.update) checkStatement(stmt.update);
+        for (const s of stmt.body.body) checkStatement(s);
+        break;
+      case 'WhileStatement':
+        checkStatement(stmt.test);
+        for (const s of stmt.body.body) checkStatement(s);
+        break;
+      case 'ExpressionStatement':
+        getTypeFromNode(stmt.expression);
+        break;
+      case 'IncludeExpression':
+        break;
+      default:
+        break;
+    }
+  }
+
+  for (const stmt of ast.body) {
+    checkStatement(stmt);
+  }
+
+  if (errors.length) {
+    throw new Error(errors.join('\n'));
+  }
+}

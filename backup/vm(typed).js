@@ -10,8 +10,6 @@ function prompt(question) {
 }
 
 function VM(buffer) {
-  const includedBM = new Map();
-
   function opcodeHasArg(op) {
     return [
       0x01, // LOAD_CONST
@@ -24,25 +22,22 @@ function VM(buffer) {
       0x16, // LOAD_PARAM
       0x17, // JMP
       0x18, // JMP_IF_FALSE
-			0x1c,
     ].includes(op);
   }
 
   let offset = 0;
-
-  if (buffer.readUInt32BE(offset) !== 0xc7114d3f)
-    throw new Error('Invalid Magic!');
-  offset += 4;
-
-  const version = buffer.readUInt8(offset++);
-  if (version !== 0x01) throw new Error('Unsupported version');
-
   function decompileConstants(buf) {
+    if (buf.readUInt32BE(offset) !== 0xc7114d3f)
+      throw new Error('Invalid Magic!');
+    offset += 4;
+
+    const version = buf.readUInt8(offset++);
+    if (version !== 0x01) throw new Error('Unsupported version');
+
     const constCount = buf.readUInt32BE(offset);
     offset += 4;
 
-    const constants = new Array(256 * 16);
-    let cp = 0; // constants pointer
+    const constants = [];
     for (let i = 0; i < constCount; i++) {
       const constantType = buf.readUInt8(offset++);
 
@@ -50,7 +45,7 @@ function VM(buffer) {
         case 0xe1: {
           const number = buf.readDoubleBE(offset);
           offset += 8;
-          constants[cp++] = number;
+          constants.push(number);
           break;
         }
         case 0xe2: {
@@ -60,16 +55,16 @@ function VM(buffer) {
           const strValue = buf.toString('utf8', offset, offset + strLen);
           offset += strLen;
 
-          constants[cp++] = strValue;
+          constants.push(strValue);
           break;
         }
         case 0xe3: {
           const bool = buf.readUInt8(offset++) === 1;
-          constants[cp++] = bool;
+          constants.push(bool);
           break;
         }
         case 0xe6: {
-          constants[cp++] = null;
+          constants.push(null);
           break;
         }
         default:
@@ -80,7 +75,68 @@ function VM(buffer) {
     return constants;
   }
 
-  const stack = [];
+  const STACK_BYTES = 64 * 1024; // 64 KB
+  const NUMBER_SLOTS = STACK_BYTES / 8;
+  const stackTypes = new Array(NUMBER_SLOTS);
+  const arrayBuf = new ArrayBuffer(STACK_BYTES);
+  const memory = {
+    number: new Float64Array(arrayBuf),
+    string: new Array(NUMBER_SLOTS),
+    boolean: new Uint8Array(STACK_BYTES),
+    function: new Array(NUMBER_SLOTS),
+    null: new Array(NUMBER_SLOTS),
+  };
+  let sp = 0;
+  
+  function push(value) {
+    const pointer = sp++;
+    if (value === null) {
+      memory.null[pointer] = null;
+      stackTypes[pointer] = null;
+      return;
+    }
+    
+    const type = value?.type ?? typeof value;
+    
+    if (!(type in memory)) {
+      throw new Error("Unsupported type: " + JSON.stringify(value, null, 2));
+    }
+    if (type === "boolean") {
+      memory.boolean[pointer] = value ? 1 : 0;
+    } else if (type === "number") {
+      memory.number[pointer] = value;
+    } else {
+      memory[type][pointer] = value;
+    }
+    stackTypes[pointer] = type;
+  }
+  
+  function pop() {
+    if (sp <= 0) throw new Error("Stack Underflow!");
+    const pointer = --sp;
+    const type = stackTypes[pointer];
+    let val;
+  
+    if (type === "boolean") {
+      val = memory.boolean[pointer] !== 0;
+    } else if (type === "number") {
+      val = memory.number[pointer];
+    } else {
+      val = memory[type][pointer];
+      memory[type][pointer] = undefined;
+    }
+  
+    stackTypes[pointer] = undefined;
+    return val;
+  }
+  
+  function peekSecondToLast() {
+    if (sp < 2) return null;
+    const pointer = sp - 2;
+    const type = stackTypes[pointer];
+    return memory[type][pointer];
+  }
+  
   const globals = [];
   const callStack = [];
   let halted = false;
@@ -88,9 +144,47 @@ function VM(buffer) {
   const constants = decompileConstants(buffer);
   const mainLength = buffer.readUInt32BE(offset);
   offset += 4;
-  const mainBytecode = buffer.slice(offset, offset + mainLength);
+  
+  // Optimize bytecode by removing unnecessary LOAD_VAR at loop end
+  const mainBytecode = [];
+  const rawBytecode = Array.from(buffer.slice(offset, offset + mainLength));
+  let i = 0;
+  while (i < rawBytecode.length) {
+    const op = rawBytecode[i];
+    mainBytecode.push(op);
+    i++;
+    
+    if (opcodeHasArg(op)) {
+      // Copy the 4-byte argument
+      for (let j = 0; j < 4; j++) {
+        mainBytecode.push(rawBytecode[i++]);
+      }
+    }
+    
+    // Optimization: Remove redundant LOAD_VAR after STORE_VAR in loops
+    if (op === 0x0f && i < rawBytecode.length - 5) { // STORE_VAR
+      const nextOp = rawBytecode[i];
+      if (nextOp === 0x10) { // LOAD_VAR
+        const storeArg = (mainBytecode[mainBytecode.length - 4] << 24) |
+                         (mainBytecode[mainBytecode.length - 3] << 16) |
+                         (mainBytecode[mainBytecode.length - 2] << 8) |
+                         mainBytecode[mainBytecode.length - 1];
+        
+        const loadArg = (rawBytecode[i + 1] << 24) |
+                        (rawBytecode[i + 2] << 16) |
+                        (rawBytecode[i + 3] << 8) |
+                        rawBytecode[i + 4];
+        
+        // If loading the same var that was just stored, skip it
+        if (storeArg === loadArg) {
+          i += 5; // Skip the LOAD_VAR and its argument
+        }
+      }
+    }
+  }
+  
   offset += mainLength;
-
+  
   function createContext(bytecode, locals, globals) {
     return {
       bytecode,
@@ -112,8 +206,7 @@ function VM(buffer) {
     };
   }
 
-  let context = createContext(Array.from(mainBytecode), globals, globals);
-  //console.log(constants)
+  let context = createContext(mainBytecode, globals, globals);
 
   function run(buf) {
     while (context && !halted) {
@@ -123,111 +216,108 @@ function VM(buffer) {
         continue;
       }
 
-      //const op = context.nextByte();
-      const op = context.bytecode[context.pc++];
-      //console.log("0x" + op.toString(16) + " " + context.pc);
+      const op = context.nextByte();
 
       switch (op) {
         case 0x01: {
           const arg = context.nextArg();
-          stack.push(constants[arg]);
+          push(constants[arg]);
           break;
         }
         case 0x02: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a + b);
+          const b = pop();
+          const a = pop();
+          push(a + b);
           break;
         }
         case 0x03: {
-          //console.log("bytes", context.bytecode, "pc:", context.pc, "byte:", context.bytecode[context.pc])
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a - b);
+          const b = pop();
+          const a = pop();
+          push(a - b);
           break;
         }
         case 0x04: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a * b);
+          const b = pop();
+          const a = pop();
+          push(a * b);
           break;
         }
         case 0x05: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a / b);
+          const b = pop();
+          const a = pop();
+          push(a / b);
           break;
         }
         case 0x06: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a > b);
+          const b = pop();
+          const a = pop();
+          push(a > b);
           break;
         }
         case 0x07: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a < b);
+          const b = pop();
+          const a = pop();
+          push(a < b);
           break;
         }
         case 0x08: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a >= b);
+          const b = pop();
+          const a = pop();
+          push(a >= b);
           break;
         }
         case 0x09: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a <= b);
+          const b = pop();
+          const a = pop();
+          push(a <= b);
           break;
         }
         case 0x0a: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a == b);
+          const b = pop();
+          const a = pop();
+          push(a == b);
           break;
         }
         case 0x0b: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a != b);
+          const b = pop();
+          const a = pop();
+          push(a != b);
           break;
         }
         case 0x0c: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a === b);
+          const b = pop();
+          const a = pop();
+          push(a === b);
           break;
         }
         case 0x0d: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a !== b);
+          const b = pop();
+          const a = pop();
+          push(a !== b);
           break;
         }
         case 0x0e: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(String(a) + String(b));
+          const b = pop();
+          const a = pop();
+          push(String(a) + String(b));
           break;
         }
         case 0x0f: {
           const arg = context.nextArg();
-          context.locals[arg] = stack.pop(); // Changed from globals to context.locals
+          const val = pop();
+          globals[arg] = val;
           break;
         }
         case 0x10: {
           const arg = context.nextArg();
-					//console.log("context.locals[arg]:", context.locals[arg])
-          stack.push(context.locals[arg]);
-
+          const val = globals[arg];
+          push(val);
           break;
         }
         case 0x11: {
           const arg = context.nextArg();
           const values = [];
-          for (let i = 0; i < arg; i++) values.unshift(stack.pop());
+          for (let i = 0; i < arg; i++) values.unshift(pop());
           console.log(...values);
           break;
         }
@@ -265,85 +355,63 @@ function VM(buffer) {
           break;
         }
         case 0x13: {
-					//console.log("stack:",stack)
           const argCount = context.nextArg();
           const args = [];
-          for (let i = 0; i < argCount; i++) args.unshift(stack.pop());
+          for (let i = 0; i < argCount; i++) args.unshift(pop());
 
-          // pop the function (don't just peek)
-					
-          const func = stack.pop();
-					//console.log(func)
+          const func = pop();
           if (func?.type !== 'function') throw new Error('Not a function');
 
-          const newContext = createContext(func.body, [], func.globals);
-
-          // seed parameters into locals[0..paramCount-1]
-          for (let i = 0; i < func.paramCount; i++) {
-            newContext.locals[i] = args[i];
-          }
+          const newContext = createContext(func.body, args, func.globals);
 
           callStack.push(context);
           context = newContext;
-					//console.log("stack:",stack)
           break;
         }
         case 0x14: {
-          const returnValue = stack.pop();
+          const returnValue = pop();
           if (callStack.length > 0) {
             context = callStack.pop();
-            if (returnValue !== undefined) stack.push(returnValue);
+            if (returnValue !== undefined) push(returnValue);
           } else {
             context.pc = context.bytecode.length;
-            if (returnValue !== undefined) stack.push(returnValue);
+            if (returnValue !== undefined) push(returnValue);
           }
           break;
         }
         case 0x16: {
           const arg = context.nextArg();
-          stack.push(context.locals[arg]);
+          push(context.locals[arg]);
           break;
         }
         case 0x17: {
           const arg = context.nextArg();
           context.pc = arg;
-          //console.log("0x17\nBytecodes:", context.bytecode, "pc:", context.pc, "current:", context.bytecode[context.pc])
           break;
         }
         case 0x18: {
-          const canJump = stack.pop();
-          const arg = context.nextArg();
+          const canJump = pop();
           if (!canJump) {
+            const arg = context.nextArg();
             context.pc = arg;
           }
-
           break;
         }
         case 0x19: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a % b);
+          const b = pop();
+          const a = pop();
+          push(a % b);
           break;
         }
         case 0x1a: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(String(b) + String(a));
+          const b = pop();
+          const a = pop();
+          push(String(b) + String(a));
           break;
         }
-        case 0x1b: {
-          stack.push(!stack.pop());
-          break;
-        }
-				case 0x1c: {
-					const arg = context.nextArg();
-          context.locals[arg] = stack.pop();
-					break;
-				}
         case 0x31: {
           const type = context.nextByte();
-          const message =
-            stack.length > 1 ? stack.splice(stack.length - 2, 1)[0] : null;
+          const message = peekSecondToLast();
           let input = prompt(message ?? null);
 
           switch (type) {
@@ -364,25 +432,21 @@ function VM(buffer) {
               input = input.toLowerCase();
               input = input === 'true' || input === '1' || input === 'yes';
               break;
-
-            case 0xe7:
-              break;
           }
 
-          stack.push(input);
+          push(input);
           break;
         }
         case 0x32: {
-          stack.push(Date.now());
+          push(Date.now());
           break;
         }
         case 0xfe: {
-          stack.push(null);
+          push(null);
           break;
         }
         case 0xff: {
           halted = true;
-
           break;
         }
       }
@@ -391,6 +455,8 @@ function VM(buffer) {
 
   run(buffer);
 }
+
+
 
 const opMap = {
   LOAD_CONST: 0x01,
@@ -419,8 +485,6 @@ const opMap = {
   JMP_IF_FALSE: 0x18,
   MODULUS: 0x19,
   CONCAT_REV: 0x1a,
-  NOT: 0x1b,
-	STORE_PARAM: 0x1c,
 
   // SPECIAL CASES
   PROMPT: 0x31,
@@ -434,8 +498,8 @@ const opMap = {
   object: 0xe5,
   null: 0xe6,
 
-  LOAD_NULL: 0xfe,
-  HALT: 0xff,
+	LOAD_NULL: 0xFE,
+  HALT: 0xFF,
 };
 
 VM(file);

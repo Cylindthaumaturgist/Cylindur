@@ -7,7 +7,7 @@ export const TokenTypes = {
   Number: 'number',
   Boolean: 'boolean',
   Float: 'float',
-  Operation: 'string',
+  Operation: 'operation',
   String: 'string',
   Null: 'null',
 };
@@ -49,7 +49,7 @@ export function Lexer(code, filename = 'unknown.cy') {
     'undefined',
     'include',
   ];
-  // FIX: removed "=" here
+
   const operations = ['+', '-', '*', '/', '<', '>', '%'];
   const symbols = [
     '_',
@@ -171,14 +171,40 @@ export function Lexer(code, filename = 'unknown.cy') {
           });
           advance(1);
         }
-      } else if (char === '-' && nextChar(1) === '>') {
-        tokens.push({
-          type: TokenTypes.Operation,
-          value: char + '>',
-          line: tokenLine,
-          column: tokenColumn,
-        });
-        advance(2);
+      } else if (char === '-') {
+        if (nextChar(1) === '>') {
+          tokens.push({
+            type: TokenTypes.Operation,
+            value: char + '>',
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(2);
+        } else if (nextChar(1) === '-') {
+          tokens.push({
+            type: TokenTypes.Operation,
+            value: char + '-',
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(2);
+        } else if (nextChar(1) === '=') {
+          tokens.push({
+            type: TokenTypes.Operation,
+            value: char + '=',
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(2);
+        } else {
+          tokens.push({
+            type: TokenTypes.Operation,
+            value: char,
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(1);
+        }
       } else if (char === '*') {
         if (nextChar(1) === '*') {
           if (nextChar(2) === '=') {
@@ -252,6 +278,24 @@ export function Lexer(code, filename = 'unknown.cy') {
           });
           advance(1);
         }
+      } else if (char === '<' || char === '>') {
+        if (nextChar(1) === '=') {
+          tokens.push({
+            type: TokenTypes.Operation,
+            value: char + '=',
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(2);
+        } else {
+          tokens.push({
+            type: TokenTypes.Operation,
+            value: char,
+            line: tokenLine,
+            column: tokenColumn,
+          });
+          advance(1);
+        }
       } else {
         tokens.push({
           type: TokenTypes.Operation,
@@ -261,30 +305,29 @@ export function Lexer(code, filename = 'unknown.cy') {
         });
         advance();
       }
-    // FIXED PART: handle "=" and "=="
     } else if (char === '=' || char === '!') {
       if (nextChar(1) === '=') {
-				if (nextChar(2) === '=') {
-					tokens.push({
+        if (nextChar(2) === '=') {
+          tokens.push({
             type: TokenTypes.Operation,
-            value: char + '==', // "==" or "!="
+            value: char + '==',
             line: tokenLine,
             column: tokenColumn,
           });
           advance(3);
-				} else {
-					tokens.push({
+        } else {
+          tokens.push({
             type: TokenTypes.Operation,
-            value: char + '=', // "==" or "!="
+            value: char + '=',
             line: tokenLine,
             column: tokenColumn,
           });
           advance(2);
-				}
+        }
       } else {
         tokens.push({
           type: TokenTypes.Operation,
-          value: char, // "=" or "!"
+          value: char,
           line: tokenLine,
           column: tokenColumn,
         });
