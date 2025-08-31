@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { ReconstructToPrintFunction } from '../helpers/ReconstructToPrintFunction.js';
 
 const file = fs.readFileSync('../compiler/code.cylinder');
 
@@ -10,8 +11,6 @@ function prompt(question) {
 }
 
 function VM(buffer) {
-  const includedBM = new Map();
-
   function opcodeHasArg(op) {
     return [
       0x01, // LOAD_CONST
@@ -24,6 +23,7 @@ function VM(buffer) {
       0x16, // LOAD_PARAM
       0x17, // JMP
       0x18, // JMP_IF_FALSE
+			0x1c, // STORE_PARAM
     ].includes(op);
   }
 
@@ -40,7 +40,7 @@ function VM(buffer) {
     const constCount = buf.readUInt32BE(offset);
     offset += 4;
 
-    const constants = new Array(256 * 16);
+    const constants = new Array(256 * 16); // 4096 slots (32.77KB)
     let cp = 0; // constants pointer
     for (let i = 0; i < constCount; i++) {
       const constantType = buf.readUInt8(offset++);
@@ -113,135 +113,44 @@ function VM(buffer) {
 
   let context = createContext(Array.from(mainBytecode), globals, globals);
   //console.log(constants)
-
-  function run(buf) {
-    while (context && !halted) {
-      if (context.pc >= context.bytecode.length) {
-        if (callStack.length === 0) break;
-        context = callStack.pop();
-        continue;
-      }
-
-      //const op = context.nextByte();
-      const op = context.bytecode[context.pc++];
-      //console.log("0x" + op.toString(16) + " " + context.pc);
-
-      switch (op) {
-        case 0x01: {
-          const arg = context.nextArg();
-          stack.push(constants[arg]);
-          break;
-        }
-        case 0x02: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a + b);
-          break;
-        }
-        case 0x03: {
-          //console.log("bytes", context.bytecode, "pc:", context.pc, "byte:", context.bytecode[context.pc])
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a - b);
-          break;
-        }
-        case 0x04: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a * b);
-          break;
-        }
-        case 0x05: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a / b);
-          break;
-        }
-        case 0x06: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a > b);
-          break;
-        }
-        case 0x07: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a < b);
-          break;
-        }
-        case 0x08: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a >= b);
-          break;
-        }
-        case 0x09: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a <= b);
-          break;
-        }
-        case 0x0a: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a == b);
-          break;
-        }
-        case 0x0b: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a != b);
-          break;
-        }
-        case 0x0c: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a === b);
-          break;
-        }
-        case 0x0d: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a !== b);
-          break;
-        }
-        case 0x0e: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(String(a) + String(b));
-          break;
-        }
-        case 0x0f: {
-          const arg = context.nextArg();
-          context.locals[arg] = stack.pop(); // Changed from globals to context.locals
-          break;
-        }
-        case 0x10: {
-          const arg = context.nextArg();
-					console.log("context.locals[arg]:", context.locals[arg])
-          stack.push(context.locals[arg]);
-
-          break;
-        }
-        case 0x11: {
-          const arg = context.nextArg();
-          const values = [];
-          for (let i = 0; i < arg; i++) values.unshift(stack.pop());
-          console.log(...values);
-          break;
-        }
-        case 0x12: {
-          const idx = context.nextArg();
-          const paramCount = context.nextArg();
+	
+	const dispatch = new Array(255);
+	dispatch[0x01] = ctx => stack.push(constants[ctx.nextArg()]);
+	dispatch[0x02] = () => stack.push((a => a[1] + a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x03] = () => stack.push((a => a[1] - a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x04] = () => stack.push((a => a[1] * a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x05] = () => stack.push((a => a[1] / a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x06] = () => stack.push((a => a[1] > a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x07] = () => stack.push((a => a[1] < a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x08] = () => stack.push((a => a[1] >= a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x09] = () => stack.push((a => a[1] <= a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x0a] = () => stack.push((a => a[1] == a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x0b] = () => stack.push((a => a[1] != a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x0c] = () => stack.push((a => a[1] === a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x0d] = () => stack.push((a => a[1] !== a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x0e] = () => stack.push((a => String(a[1]) + String(a[0]))([stack.pop(), stack.pop()]));
+	dispatch[0x0f] = ctx => ctx.locals[ctx.nextArg()] = stack.pop();
+	dispatch[0x10] = ctx => stack.push(ctx.locals[ctx.nextArg()]);
+	dispatch[0x11] = ctx => {
+		const arg = ctx.nextArg();
+    const values = [];
+    for (let i = 0; i < arg; i++) values.unshift(stack.pop());
+		const func = values.find(val => val?.type === "function");
+		if (func) values[values.indexOf(func)] = ReconstructToPrintFunction(func);
+		console.log(...values);
+	};
+	dispatch[0x12] = ctx => {
+		const idx = ctx.nextArg();
+          const paramCount = ctx.nextArg();
           const body = [];
           let depth = 0;
 
-          while (context.pc < context.bytecode.length) {
-            const opcode = context.nextByte();
+          while (ctx.pc < ctx.bytecode.length) {
+            const opcode = ctx.nextByte();
             body.push(opcode);
 
             if (opcodeHasArg(opcode)) {
-              const arg = context.nextArg();
+              const arg = ctx.nextArg();
               body.push((arg >> 24) & 0xff);
               body.push((arg >> 16) & 0xff);
               body.push((arg >> 8) & 0xff);
@@ -255,87 +164,51 @@ function VM(buffer) {
             }
           }
 
-          context.locals[idx] = {
+          ctx.locals[idx] = {
             type: 'function',
             paramCount,
             body,
-            globals: context.globals,
+            globals: ctx.globals,
           };
-          break;
-        }
-        case 0x13: {
-					console.log("stack:",stack)
-          const argCount = context.nextArg();
+	};
+	dispatch[0x13] = ctx => {
+		const argCount = ctx.nextArg();
           const args = [];
           for (let i = 0; i < argCount; i++) args.unshift(stack.pop());
 
-          // pop the function (don't just peek)
-					
           const func = stack.pop();
-					//console.log(func)
           if (func?.type !== 'function') throw new Error('Not a function');
 
           const newContext = createContext(func.body, [], func.globals);
-
-          // seed parameters into locals[0..paramCount-1]
           for (let i = 0; i < func.paramCount; i++) {
             newContext.locals[i] = args[i];
           }
 
-          callStack.push(context);
-          context = newContext;
-          break;
-        }
-        case 0x14: {
-          const returnValue = stack.pop();
-					console.log({ returnValue })
+          callStack.push(ctx);
+          ctx = newContext;
+	};
+	dispatch[0x14] = ctx => {
+		const returnValue = stack.pop();
           if (callStack.length > 0) {
-            context = callStack.pop();
+            ctx = callStack.pop();
             if (returnValue !== undefined) stack.push(returnValue);
           } else {
-            context.pc = context.bytecode.length;
+            ctx.pc = ctx.bytecode.length;
             if (returnValue !== undefined) stack.push(returnValue);
           }
-          break;
-        }
-        case 0x16: {
-          const arg = context.nextArg();
-          stack.push(context.locals[arg]);
-          break;
-        }
-        case 0x17: {
-          const arg = context.nextArg();
-          context.pc = arg;
-          //console.log("0x17\nBytecodes:", context.bytecode, "pc:", context.pc, "current:", context.bytecode[context.pc])
-          break;
-        }
-        case 0x18: {
-          const canJump = stack.pop();
-          const arg = context.nextArg();
-          if (!canJump) {
-            context.pc = arg;
-          }
-
-          break;
-        }
-        case 0x19: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(a % b);
-          break;
-        }
-        case 0x1a: {
-          const b = stack.pop();
-          const a = stack.pop();
-          stack.push(String(b) + String(a));
-          break;
-        }
-        case 0x1b: {
-          stack.push(!stack.pop());
-          break;
-        }
-        case 0x31: {
-          const type = context.nextByte();
+	};
+	dispatch[0x15] = ctx => stack.push(ctx.globals[ctx.nextArg()]);
+	dispatch[0x16] = ctx => stack.push(ctx.locals[ctx.nextArg()]);
+  dispatch[0x17] = ctx => ctx.pc = ctx.nextArg();
+	dispatch[0x18] = ctx => {
+		 if (!stack.pop()) ctx.pc = ctx.nextArg();
+	};
+	dispatch[0x19] = () => stack.push((a => a[1] % a[0])([stack.pop(), stack.pop()]));
+	dispatch[0x1a] = () => stack.push((a => String(a[0]) + String(a[1]))([stack.pop(), stack.pop()]));
+	dispatch[0x1b] = () => stack.push(!stack.pop());
+	dispatch[0x1c] = ctx => ctx.locals[ctx.nextArg()] = stack.pop();
+	dispatch[0x31] = ctx => {
+		const type = ctx.nextByte();
           const message =
             stack.length > 1 ? stack.splice(stack.length - 2, 1)[0] : null;
           let input = prompt(message ?? null);
@@ -364,26 +237,26 @@ function VM(buffer) {
           }
 
           stack.push(input);
-          break;
-        }
-        case 0x32: {
-          stack.push(Date.now());
-          break;
-        }
-        case 0xfe: {
-          stack.push(null);
-          break;
-        }
-        case 0xff: {
-          halted = true;
-
-          break;
-        }
+	}
+	dispatch[0x32] = () => stack.push(Date.now());
+	dispatch[0xfe] = () => stack.push(null);
+	dispatch[0xff] = () => halted = true;
+	
+  function run(buf) {
+    while (context && !halted) {
+      if (context.pc >= context.bytecode.length) {
+        if (callStack.length === 0) break;
+        context = callStack.pop();
+        continue;
       }
+
+      const op = context.bytecode[context.pc++];
+      if (dispatch[op]) dispatch[op](context);
     }
   }
 
   run(buffer);
+	console.log(stack)
 }
 
 const opMap = {
@@ -414,6 +287,7 @@ const opMap = {
   MODULUS: 0x19,
   CONCAT_REV: 0x1a,
   NOT: 0x1b,
+	STORE_PARAM: 0x1c,
 
   // SPECIAL CASES
   PROMPT: 0x31,

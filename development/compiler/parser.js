@@ -1,5 +1,5 @@
 import { TokenTypes } from './lexer.js';
-import CaretError from './helpers/CaretError.js';
+import CaretError from '../helpers/CaretError.js';
 
 function ParserError(file, message, line, column, sourceLines) {
   console.log(
@@ -248,7 +248,7 @@ export function Parser(tokens, code, filename = 'unknown.cy') {
           identifierNode = {
             type: 'MemberExpression',
             object: identifierNode,
-            property: index,
+            property: index, 
             computed: true,
             loc: {
               start: { line: startLine, column: startColumn },

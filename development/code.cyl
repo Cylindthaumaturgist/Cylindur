@@ -1,11 +1,15 @@
-include#<SystemLogging>;
+include#<System>;
 include#<Chrono>;
 
-fun Log(n) {
-	System.Log(n);
+const start = Chrono.Now();
+
+var i = 0;
+while (i < 1000000) {
+  i++;
 }
-fun add(x,y) { 
-	x += 1;
-	return x + y; 
-}
-Log(add(10, 10));
+
+//Chrono.Sleep(1000);
+
+const elapsed = Chrono.Now() - start;
+System.PrintT("Elapsed: %ims", elapsed);
+

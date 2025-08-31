@@ -10,7 +10,7 @@ const Lexed = Lexer(code, filename);
 const parsed = Parser(Lexed, code, filename);
 
 //console.log(Lexed)
-//console.dir(parsed, {depth: null})
+console.dir(parsed, {depth: null})
 
 const cylinder = filename.split('.')[0] + '.cylinder';
 const compiled = Compiler(parsed);
@@ -21,4 +21,10 @@ console.log(
     .match(/.{1,2}/g)
     .join(' ')
 );
+
+/*const hexString = Array.from(Buffer.from(compiled))
+  .map(byte => '0x' + byte.toString(16).padStart(2, '0'))
+  .join(', ');
+
+console.log(hexString);*/
 fs.writeFileSync(cylinder, compiled);

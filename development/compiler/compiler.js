@@ -1,4 +1,4 @@
-import CaretError from './helpers/CaretError.js';
+import CaretError from '../helpers/CaretError.js';
 
 String.prototype.capitalize = function () {
   if (!this) return '';
@@ -23,7 +23,7 @@ function CompileError(file, message, line, column, sourceLines) {
 /*
   const builtInFunctionsType = {
     System: {
-      Log: {
+      Print: {
         params: [{ name: 'args', type: 'Any', variadic: true }],
         returnType: 'Void',
       },
@@ -39,14 +39,14 @@ function CompileError(file, message, line, column, sourceLines) {
 */
 
 function Compiler(ast, fileName, code) {
-  const builtInIncludes = new Set(['SystemLogging', 'Mathematics', 'Chrono']);
+  const sbl = new Set(['System', 'Mathematics', 'Chrono']);
   const bytes = [];
   const constants = [];
   let variableIndex = 0;
   const globalScope = new Map();
   const constantVariableMap = new Map();
   const scopes = [globalScope];
-  const includedBuiltIn = new Set();
+  const included_sbl = new Set();
   const ver = 0x01;
 
   const opMap = {
@@ -78,6 +78,7 @@ function Compiler(ast, fileName, code) {
     CONCAT_REV: 0x1a,
     NOT: 0x1b,
 		STORE_PARAM: 0x1c,
+		ARRAY_VAL_LOAD: 0x1d,
     // AND
     // OR
     // XOR
@@ -85,8 +86,10 @@ function Compiler(ast, fileName, code) {
     // TYPE_CHECK
 
     // SPECIAL CASES
-    PROMPT: 0x31,
-    TIME_NOW: 0x32,
+    PROMPT: 0x41,
+    TIME_NOW: 0x42,
+		TIMESTAMP: 0x43,
+		SLEEP: 0x44,
 
     // TYPES
     number: 0xe1,
@@ -96,6 +99,7 @@ function Compiler(ast, fileName, code) {
     object: 0xe5,
     null: 0xe6,
     any: 0xe7,
+		identifier: 0xe8,
 
     LOAD_NULL: 0xfe,
     HALT: 0xff,
@@ -125,7 +129,6 @@ function Compiler(ast, fileName, code) {
   }
 
   function getVarIndex(name) {
-		console.log(scopes)
     for (let i = scopes.length - 1; i >= 0; i--) {
       if (scopes[i].has(name)) return scopes[i].get(name);
     }
@@ -134,7 +137,6 @@ function Compiler(ast, fileName, code) {
 
   function declareVar(name) {
     const currentScope = scopes[scopes.length - 1];
-		console.log("scope:",currentScope)
     if (!currentScope.has(name)) currentScope.set(name, variableIndex++);
     return currentScope.get(name);
   }
@@ -174,10 +176,10 @@ function Compiler(ast, fileName, code) {
     return result;
   }
 
-  const builtInHandlers = {
+  const sblHandlers = {
     System: {
-      Log: {
-        requiredLib: 'SystemLogging',
+      Print: {
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           if (expr.arguments.length > 0) {
@@ -186,8 +188,38 @@ function Compiler(ast, fileName, code) {
           }
         },
       },
-      LogHalt: {
-        requiredLib: 'SystemLogging',
+			PrintT: {
+        requiredLib: 'System',
+        compile: (expr, bytes, constants) => {
+          // first arg is the format string node
+          const formatNode = expr.arguments[0];
+          
+          if (!formatNode || formatNode.type !== "StringLiteral") {
+            throw new Error("PrintF requires a format string as the first argument");
+          }
+          
+          const format = formatNode.value; // <-- real string!
+          const args = expr.arguments.slice(1);
+          let i = 0;
+          
+          const formatted = format.replace(/%[dsi]/g, match => {
+            let arg = args[i++] ?? match;
+            if (arg?.type === "Identifier") {
+              return `%{0x${getVarIndex(arg.value).toString(16).toUpperCase().padStart(8, '0')}}`;
+            }
+            if (match === "%s") return String(arg.value ?? arg);
+            else if (match === "%d") return Number(arg.value ?? arg);
+            return match;
+          });
+          compileExpression({ type: "StringLiteral", value: formatted });
+          
+          writeUint8(bytes, opMap.PRINT);
+          writeUint32(bytes, 1); 
+        },
+      },
+			
+      PrintHalt: {
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           if (expr.arguments.length > 0) {
@@ -198,7 +230,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Err: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           const ansi = '\x1b[1;38;2;244;71;71m[ERROR]:\x1b[22m ';
@@ -221,7 +253,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Err: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           const ansi = '\x1b[1;38;2;244;71;71m[ERROR]:\x1b[22m ';
@@ -245,7 +277,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Warn: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           const ansi = '\x1b[1;38;2;255;215;0m[WARN]:\x1b[22m ';
@@ -268,7 +300,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Warn: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           const ansi = '\x1b[1;38;2;255;215;0m[WARN]:\x1b[22m ';
@@ -292,7 +324,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Info: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           const ansi = '\x1b[1;37m[INFO]:\x1b[22m ';
@@ -315,7 +347,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Info: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           const ansi = '\x1b[1;37m[INFO]:\x1b[22m ';
@@ -339,7 +371,7 @@ function Compiler(ast, fileName, code) {
         },
       },
       Prompt: {
-        requiredLib: 'SystemLogging',
+        requiredLib: 'System',
         compile: (expr, bytes, constants) => {
           expr.arguments.forEach((arg) => compileExpression(arg));
           let type = opMap.string;
@@ -368,22 +400,22 @@ function Compiler(ast, fileName, code) {
     Math: {
       PI: {
         requiredLib: 'Mathematics',
-        type: 'variable',
+        type: 'constant',
         value: 3.141592653589793,
       },
       E: {
         requiredLib: 'Mathematics',
-        type: 'variable',
+        type: 'constant',
         value: 2.718281828459045,
       },
       PI32: {
         requiredLib: 'Mathematics',
-        type: 'variable',
+        type: 'constant',
         value: 3.1415926,
       },
       E32: {
         requiredLib: 'Mathematics',
-        type: 'variable',
+        type: 'constant',
         value: 2.7182818,
       },
       Pow2: {
@@ -423,30 +455,57 @@ function Compiler(ast, fileName, code) {
         },
       },
     },
-    Time: {
-      Now: {
-        requiredLib: 'Chrono',
+    Chrono: {
+			Now: {
+				requiredLib: 'Chrono',
         compile: (expr, bytes, constants) => {
-          expr.arguments.forEach((arg) => compileExpression(arg));
           writeUint8(bytes, opMap.TIME_NOW);
         },
+			},
+      Timestamp: {
+        requiredLib: 'Chrono',
+        compile: (expr, bytes, constants) => {
+          writeUint8(bytes, opMap.TIMESTAMP);
+        },
+      },
+			Sleep: {
+				requiredLib: 'Chrono',
+        compile: (expr, bytes, constants) => {
+          expr.arguments.forEach((arg) => compileExpression(arg));
+          writeUint8(bytes, opMap.SLEEP);
+        },
+			},
+			SECOND: {
+        requiredLib: 'Chrono',
+        type: 'constant',
+        value: 1000,
+      },
+			MINUTE: {
+        requiredLib: 'Chrono',
+        type: 'constant',
+        value: 1000 * 60,
+      },
+			HOUR: {
+        requiredLib: 'Chrono',
+        type: 'constant',
+        value: 1000 * 60 * 60,
+      },
+			DAY: {
+        requiredLib: 'Chrono',
+        type: 'constant',
+        value: 1000 * 60 * 60 * 24,
       },
     },
   };
 
-  function isBuiltInMemberFunc(propertyName) {
-    return [
-      'Log',
-      'Err',
-      'Warn',
-      'Info',
-      'LogHalt',
-      'ErrHalt',
-      'WarnHalt',
-      'InfoHalt',
-      'Now',
-      'Prompt',
-    ].includes(propertyName);
+  function isSblMemberFunc(propertyName) {
+    for (const namespace in sblHandlers) {
+      const handlerGroup = sblHandlers[namespace];
+      if (handlerGroup[propertyName] && typeof handlerGroup[propertyName].compile === 'function') {
+        return true;
+      }
+    }
+    return false;
   }
 
   const functionStack = [];
@@ -487,7 +546,7 @@ function Compiler(ast, fileName, code) {
         break;
       }
       case 'Identifier': {
-        if (Object.keys(builtInHandlers).includes(node.value)) {
+        if (Object.keys(sblHandlers).includes(node.value)) {
           const msg = `const ${node.value} = [native code];`;
           if (!constants.includes(msg)) constants.push(msg);
 
@@ -510,6 +569,12 @@ function Compiler(ast, fileName, code) {
         writeUint8(bytes, opMap.LOAD_NULL);
         break;
       }
+			case 'ArrayExpression': {
+				constants.push(node.elements);
+				writeUint8(bytes, opMap.LOAD_CONST);
+				writeUint32(bytes, constants.indexOf(node.elements));
+				break;
+			}
       case 'CallExpression': {
         let funcIndex;
 
@@ -532,7 +597,7 @@ function Compiler(ast, fileName, code) {
           const objectName = node.callee.object.value;
           const propName = node.callee.property.value;
 
-          funcIndex = builtInHandlers[objectName]?.[propName];
+          funcIndex = sblHandlers[objectName]?.[propName];
           if (funcIndex === undefined)
             throw new Error(`Unknown function ${objectName}.${propName}`);
           funcIndex?.compile(node, bytes, constants);
@@ -579,21 +644,37 @@ function Compiler(ast, fileName, code) {
       case 'MemberExpression': {
         const objectName = node.object.value;
         const propertyName = node.property.value;
-        const handler = builtInHandlers[objectName][propertyName];
-
-        if (!handler)
-          throw new Error(`Unknown member: ${objectName}.${propertyName}`);
-        if (handler.type === 'variable') {
-          if (!constants.includes(handler.value)) constants.push(handler.value);
-          writeUint8(bytes, opMap.LOAD_CONST);
-          writeUint32(bytes, constants.indexOf(handler.value));
-        } else if (isBuiltInMemberFunc(propertyName)) {
-          const msg = `fun ${propertyName.capitalize()}() {\n\x20\x20[native code];\n}`;
-          if (!constants.includes(msg)) constants.push(msg);
-
-          writeUint8(bytes, opMap.LOAD_CONST);
-          writeUint32(bytes, constants.indexOf(msg));
-        }
+				const funcContext = functionStack[functionStack.length - 1];
+				const isParam = funcContext?.has(node.object.value);
+				if (Object.keys(sblHandlers).includes(objectName) && !node.computed) {
+					const handler = sblHandlers[objectName][propertyName];
+          if (handler.type === 'variable' || handler.type === "constant") {
+            if (!constants.includes(handler.value)) constants.push(handler.value);
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(handler.value));
+          } else if (isSblMemberFunc(propertyName)) {
+            const msg = `fun ${propertyName.capitalize()}() {\n\x20\x20[native code];\n}`;
+            if (!constants.includes(msg)) constants.push(msg);
+  
+            writeUint8(bytes, opMap.LOAD_CONST);
+            writeUint32(bytes, constants.indexOf(msg));
+          }
+				}
+				if (node.computed === true) {
+					writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
+					writeUint32(bytes, getVarIndex(node.object.value));
+					if (node.property.type === "NumberLiteral") {
+						writeUint8(bytes, opMap.ARRAY_VAL_LOAD);
+						writeUint8(bytes, opMap.number);
+					  writeUint32(bytes, node.property.value);
+					} else if (node.property.type === "Identifier") {
+						writeUint8(bytes, opMap.ARRAY_VAL_LOAD);
+						writeUint8(bytes, opMap.identifier);
+					  writeUint32(bytes, getVarIndex(node.property.value));
+					}
+					
+				}
+        
         break;
       }
       case 'UnaryExpression': {
@@ -612,7 +693,7 @@ function Compiler(ast, fileName, code) {
 				} else {
 					idx = getVarIndex(argument.value);
 				}
-
+				
         if (
           (operator === '++' || operator === '--') &&
           !constants.includes(1)
@@ -620,7 +701,7 @@ function Compiler(ast, fileName, code) {
           constants.push(1);
         }
         const oneIdx = constants.indexOf(1);
-
+				
         if (operator === '!') {
           writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
           writeUint32(bytes, idx);
@@ -672,9 +753,9 @@ function Compiler(ast, fileName, code) {
     switch (node.type) {
       case 'IncludeExpression': {
         if (node.isBuiltin) {
-          if (!builtInIncludes.has(node.library))
+          if (!sbl.has(node.library))
             throw new Error('Unknown built-in library: ' + node.library);
-          includedBuiltIn.add(node.library);
+          included_sbl.add(node.library);
         }
         break;
       }
@@ -682,6 +763,9 @@ function Compiler(ast, fileName, code) {
         const isConst = node.kind === 'Constant';
 
         node.declarations.forEach((decl) => {
+					if (
+						decl.typeAnnotation.annotation !== "Array" && decl.init.type === "ArrayExpression"
+				  ) throw new Error("Unknown type! Expected Array but got Null");
           compileExpression(decl.init);
           const idx = declareVar(decl.id.value);
           if (isConst) constantVariableMap.set(idx, true);
@@ -784,9 +868,6 @@ function Compiler(ast, fileName, code) {
           // Postfix (++ / --)
           writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
           writeUint32(bytes, idx);
-        
-          writeUint8(bytes, isParam ? opMap.LOAD_PARAM : opMap.LOAD_VAR);
-          writeUint32(bytes, idx);
           writeUint8(bytes, opMap.LOAD_CONST);
           writeUint32(bytes, constants.indexOf(1));
           writeUint8(bytes, expr.operator === '++' ? opMap.ADD : opMap.SUB);
@@ -803,9 +884,9 @@ function Compiler(ast, fileName, code) {
         ) {
           const objectName = expr.callee.object.value;
           const propertyName = expr.callee.property.value;
-          const handler = builtInHandlers[objectName]?.[propertyName];
+          const handler = sblHandlers[objectName]?.[propertyName];
           if (handler) {
-            if (!includedBuiltIn.has(handler.requiredLib)) {
+            if (!included_sbl.has(handler.requiredLib)) {
               throw new Error(
                 `To use ${objectName}.${propertyName}(); You must include built in library: '${handler.requiredLib}'`
               );
@@ -819,7 +900,8 @@ function Compiler(ast, fileName, code) {
             const funcContext = functionStack[functionStack.length - 1];
             const inParams = funcContext?.params.has(name);
             const inScope = scopes[scopes.length - 1].has(name);
-            funcIndex = getVarIndex(name);
+						let isParam = funcContext?.params.has(name);
+            funcIndex = isParam ? funcContext?.params.get(name) : getVarIndex(name);
             writeUint8(
               bytes,
               inParams || inScope ? opMap.LOAD_VAR : opMap.LOAD_GLOBAL
@@ -834,9 +916,9 @@ function Compiler(ast, fileName, code) {
         if (expr.type === 'MemberExpression') {
           const objectName = expr.object.value;
           const propertyName = expr.property.value;
-          const handler = builtInHandlers[objectName]?.[propertyName];
+          const handler = sblHandlers[objectName]?.[propertyName];
           if (handler) {
-            if (!includedBuiltIn.has(handler.requiredLib)) {
+            if (!included_sbl.has(handler.requiredLib)) {
               throw new Error(
                 `To use ${objectName}.${propertyName}, you must include built-in library: '${handler.requiredLib}'`
               );
@@ -851,6 +933,7 @@ function Compiler(ast, fileName, code) {
         break;
       }
       case 'IfStatement': {
+				const isInsideFunc = isInsideFunction(ast, node);
         compileExpression(node.test);
 
         const jmpIfFalsePos = bytes.length;
@@ -867,7 +950,7 @@ function Compiler(ast, fileName, code) {
         writeUint8(bytes, opMap.JMP);
         writeUint32(bytes, 0);
 
-        const offset1 = bytes.length;
+        const offset1 = isInsideFunc[0] ? bytes.length - isInsideFunc[1] : bytes.length;
         bytes[jmpIfFalsePos + 1] = (offset1 >> 24) & 0xff;
         bytes[jmpIfFalsePos + 2] = (offset1 >> 16) & 0xff;
         bytes[jmpIfFalsePos + 3] = (offset1 >> 8) & 0xff;
@@ -881,11 +964,12 @@ function Compiler(ast, fileName, code) {
           }
         }
 
-        const offset2 = bytes.length;
+        const offset2 = isInsideFunc[0] ? bytes.length - isInsideFunc[1] : bytes.length;
         bytes[jmpPos + 1] = (offset2 >> 24) & 0xff;
         bytes[jmpPos + 2] = (offset2 >> 16) & 0xff;
         bytes[jmpPos + 3] = (offset2 >> 8) & 0xff;
         bytes[jmpPos + 4] = offset2 & 0xff;
+				
         break;
       }
       case 'WhileStatement': {
@@ -904,7 +988,6 @@ function Compiler(ast, fileName, code) {
         } else {
           compileNode(node.body);
         }
-				console.log(isInsideFunc[1])
 
         writeUint8(bytes, opMap.JMP);
         writeUint32(
@@ -932,9 +1015,9 @@ function Compiler(ast, fileName, code) {
 
   writeUint8(bytes, opMap.HALT);
 
-  const header = [0xc7, 0x11, 0x4d, 0x3f, ver];
+  const header = [0x2E, 0x63, 0x79, 0x6C, ver];
 
-  const constantsBytes = []; // [opMap.CONST_LEN];
+  const constantsBytes = []; 
   writeUint32(constantsBytes, constants.length);
   for (const c of constants) {
     if (typeof c === 'number') {
@@ -948,12 +1031,30 @@ function Compiler(ast, fileName, code) {
       writeUint8(constantsBytes, c ? 1 : 0);
     } else if (c === null) {
       writeUint8(constantsBytes, opMap.null);
-    } else {
+    } else if (Array.isArray(c)) {
+			writeUint8(constantsBytes, opMap.array);
+			writeUint32(constantsBytes, c.length);
+			for (let i = 0; i < c.length; i++) {
+				//console.log("arr:",c[i])
+				if (c[i].type === 'NumberLiteral') {
+          writeUint8(constantsBytes, opMap.number);
+          writeDouble(constantsBytes, c[i].value);
+        } else if (c[i].type === 'StringLiteral') {
+          writeUint8(constantsBytes, opMap.string);
+          writeString(constantsBytes, c[i].value);
+        } else if (c[i].type === 'BoolLiteral') {
+          writeUint8(constantsBytes, opMap.boolean);
+          writeUint8(constantsBytes, c[i].value === true ? 1 : 0);
+        } else if (c[i].type === 'Null') {
+          writeUint8(constantsBytes, opMap.null);
+        }
+			}
+		} else {
       throw new Error('Unsupported constant type: ' + typeof c);
     }
   }
 
-  const bytecodesLengthBytes = []; // [opMap.BYTE_LEN];
+  const bytecodesLengthBytes = [];
   writeUint32(bytecodesLengthBytes, bytes.length);
 
   return Buffer.from([
